@@ -1,0 +1,66 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" android:versionCode="1" android:versionName="0.1.0-dev">
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- 关于页「检查更新」下载安装包后交给系统安装器。 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 自动更新下载好安装包后发一条通知，点了交给系统安装器；开关默认关闭，打开时才请求这项权限。 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 自动更新的每日任务在重启后保留（JobInfo.setPersisted）。 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 按需资源包（日文词典、语言词库、离线释义、本地语音运行库）在用户点下载后由前台服务下载，带进度通知；按流量计费的网络先确认大小，所以要读网络状态。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35" />
+    <!-- 系统语音识别：SpeechRecognizer 绑定的是 RecognitionService。Android 11 起包可见性收紧，只声明 RECOGNIZE_SPEECH 时，识别服务和识别界面不在同一个包的设备上会被判为没有识别服务。 -->
+    <queries><intent><action android:name="android.speech.action.RECOGNIZE_SPEECH" /></intent><intent><action android:name="android.speech.RecognitionService" /></intent></queries>
+    <!-- 明文 http 只给 AI 辅助的本机、局域网接口用，原因和边界见 res/xml/network_security_config.xml。 -->
+    <application android:theme="@style/Theme.MSIME" android:label="@string/app_name" android:icon="@drawable/app_icon_classic" android:allowBackup="false" android:supportsRtl="true" android:networkSecurityConfig="@xml/network_security_config">
+        <!-- 返回手势走 OnBackPressedDispatcher 的预测式返回，只在宿主的 HomeActivity 上打开；不加在 application 上，因为 :ime 进程里的输入法服务靠 KEYCODE_BACK 收起面板。 -->
+        <activity android:name="app.msime.android.home.HomeActivity" android:exported="true" android:enableOnBackInvokedCallback="true">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+        </activity>
+        <activity android:name="app.msime.android.home.OnboardingActivity" android:exported="false" />
+        <activity android:name="app.msime.android.home.KeyboardTryoutActivity" android:exported="false" android:windowSoftInputMode="adjustResize|stateVisible" />
+        <!-- Apple 网页登录的回调：浏览器授权后跳回 `${applicationId}://auth/apple`。它不显示界面，只接受本应用刚发起、尚未完成、未过期的那次登录。 -->
+        <activity android:name="app.msime.android.home.AuthRedirectActivity" android:exported="true" android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${applicationId}" android:host="auth" android:path="/apple" />
+            </intent-filter>
+        </activity>
+        <activity-alias android:name=".MainActivityForest" android:targetActivity="app.msime.android.home.HomeActivity" android:icon="@drawable/app_icon_forest" android:enabled="false" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter></activity-alias>
+        <activity-alias android:name=".MainActivitySky" android:targetActivity="app.msime.android.home.HomeActivity" android:icon="@drawable/app_icon_sky" android:enabled="false" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter></activity-alias>
+        <activity-alias android:name=".MainActivityDusk" android:targetActivity="app.msime.android.home.HomeActivity" android:icon="@drawable/app_icon_dusk" android:enabled="false" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter></activity-alias>
+        <activity-alias android:name=".MainActivityVermilion" android:targetActivity="app.msime.android.home.HomeActivity" android:icon="@drawable/app_icon_vermilion" android:enabled="false" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter></activity-alias>
+        <activity android:name="app.msime.android.VoiceRecognitionActivity" android:exported="false" android:excludeFromRecents="true" android:theme="@android:style/Theme.Material.Light.Dialog.NoActionBar" />
+        <!-- 自动更新：每天一次检查、下载并核对更新，只在用户打开「自动更新」后排程。 -->
+        <service android:name="app.msime.android.home.UpdateJobService" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- 按需资源包下载：只由用户操作启动，跑在主进程（不设 android:process），:ime 进程从不安装资源包。 -->
+        <service android:name="app.msime.android.ResourcePackService" android:exported="false" android:foregroundServiceType="dataSync" />
+        <service android:name="app.msime.android.MSIMEInputService" android:process=":ime" android:exported="true" android:permission="android.permission.BIND_INPUT_METHOD">
+            <intent-filter><action android:name="android.view.InputMethod" /></intent-filter>
+            <meta-data android:name="android.view.im" android:resource="@xml/method" />
+        </service>
+        <provider
+            android:name="app.msime.android.AccountSessionProvider"
+            android:authorities="${applicationId}.account-session"
+            android:exported="false" />
+        <provider
+            android:name="app.msime.android.MlKitImeInitProvider"
+            android:authorities="${applicationId}.mlkit-ime-init"
+            android:exported="false"
+            android:process=":ime" />
+        <!-- 把缓存里的诊断包、更新安装包和导出文件以 content:// 交给别的应用，可分享的目录见 res/xml/msime_file_paths.xml。 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/msime_file_paths" />
+        </provider>
+    </application>
+</manifest>

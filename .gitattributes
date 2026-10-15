@@ -1,0 +1,16 @@
+# 换行策略。这台机器 core.autocrlf=true，不加这条的话检出时 .sh 会被换成 CRLF，
+# Git Bash 里 `bash host/scripts/sign-apk.sh` 会因 `\r` 报错；而仓库里所有源件实测是 LF。
+* text=auto
+*.sh text eol=lf
+*.bash text eol=lf
+*.bat text eol=crlf
+*.tsv text eol=lf
+*.rs text eol=lf
+*.java text eol=lf
+*.kt text eol=lf
+*.xml text eol=lf
+*.md text eol=lf
+*.png binary
+*.jpg binary
+*.jar binary
+*.so binary

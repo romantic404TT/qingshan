@@ -1,0 +1,2033 @@
+# A3 手工整句条目（水杉 Android 随包译词表的追加部分）。格式同上游：词	[词性. ]译词
+# 由 README「当前状态」的 A3 小节维护；build_glossary_subset.py 生成完子集后追加本文件。
+谢谢你的帮助	thank you for your help
+非常感谢	thanks a lot
+对不起我迟到了	sorry i am late
+回头见	see you later
+我在路上了	i am on my way
+马上就到	arriving soon
+我晚点联系你	contact you later
+你什么时候有空	when are you free
+现在方便吗	is now a good time
+我们约个时间	let us set a time
+今天来不及了	no time today
+明天再说吧	let us talk tomorrow
+我帮你看看	let me take a look for you
+这个我不太清楚	i am not too sure about this
+你说得对	you are right
+我有不同看法	i see it differently
+我们商量一下	let us discuss it
+先这样吧	let us leave it here
+请稍等	please wait a moment
+我马上回复你	reply right away
+我已经收到	i have received it
+我已经发给你了	i already sent it to you
+你收到了吗	did you get it
+今天天气很好	the weather is nice today
+明天要下雨	it will rain tomorrow
+外面很冷	it is cold outside
+记得多穿点	remember to wear more
+今天很热	it is hot today
+风有点大	the wind is a bit strong
+我们吃饭吧	let us eat
+你吃了吗	have you eaten
+我请你吃饭	treat you to a meal
+这个很好吃	this is delicious
+我不太饿	i am not very hungry
+喝点水吧	drink some water
+我吃饱了	i am full
+一起吃饭吗	want to eat together
+几点吃晚饭	what time is dinner
+我买杯咖啡	buy a coffee
+便宜一点吧	a little cheaper please
+我买这个	take this
+可以刷卡吗	can i pay by card
+用手机支付	pay with the phone
+我在找这个	i am looking for this
+有没有别的	do you have others
+我随便看看	i am just browsing
+帮我拿一下	help me get it
+我要这个和那个	i want this and that
+我累了	i am tired
+我想休息一会儿	i want to rest a bit
+我们回家吧	let us go home
+我到家了	i am home
+开门吧	open the door
+我出门了	i am leaving now
+等我一下	wait for me
+快点走	walk faster
+这边请	this way please
+怎么走	how do i get there
+我迷路了	i am lost
+附近有没有地铁站	is there a metro station nearby
+打车回去吧	let us take a taxi back
+下一站是哪里	what is the next stop
+我要去机场	i am going to the airport
+买两张票	buy two tickets
+会议几点开始	what time does the meeting start
+我先走了	i am leaving first
+工作做完了	the work is done
+这个报告要看一下	i need to look at this report
+帮我打印一份	print a copy for me
+邮件我发了	i sent the email
+我们下周见面	let us meet next week
+今天星期几	what day is it today
+几月几号	what is the date
+这个月很忙	this month is busy
+周末有空吗	are you free on the weekend
+我明天请假	i am taking leave tomorrow
+上班时间九点	work starts at nine
+已经下班了	already off work
+该睡觉了	time to sleep
+我起晚了	i overslept
+帮我拍张照	take a photo for me
+这张照片好看	this photo looks good
+我看一下手机	let me check my phone
+手机没电了	the phone is dead
+给我充一下电	charge it for me
+网络不太好	the network is not great
+连一下无线	connect to the wifi
+我给你打电话	call you
+信号不好	poor signal
+我听不清	i cannot hear clearly
+再说一遍	say it again
+你声音太大	you are too loud
+我感冒了	i caught a cold
+头有点疼	i have a headache
+不太舒服	not feeling well
+我们去医院	let us go to the hospital
+要新鲜的	the fresh ones please
+我不要辣的	i do not want spicy
+少放点盐	less salt please
+我做好了	i have cooked it
+尝尝看	have a taste
+我们出去玩吧	let us go out
+看电影吗	want to watch a movie
+这个电影好看	this movie is good
+太无聊了	so boring
+非常有意思	very interesting
+我不喜欢这个	i do not like this
+我挺喜欢的	i quite like it
+随便都行	whatever is fine
+你决定吧	you decide
+我无所谓	i do not mind
+你看这个	look at this
+真的吗	really
+我不相信	i do not believe it
+当然是真的	of course it is true
+也许吧	maybe
+我不确定	i am not sure
+大概是这样	roughly like this
+一定是他	it must be him
+好像是他	looks like him
+我忘记了	i forgot
+我想起来了	i just remembered
+你记得吗	do you remember
+我从来没有见过	i have never seen it
+第一次来	first time here
+经常来这里	i often come here
+最近怎么样	how have you been
+就这样定了	settled then
+我们开始吧	let us begin
+先等等	hold on first
+继续吧	go on
+完成了	it is done
+已经做了	already done
+你要小心	be careful
+别着急	do not rush
+你真棒	you are great
+我做不到	i cannot do it
+我可以试试	i can try
+让我来吧	let me do it
+交给我	leave it to me
+需要帮忙吗	do you need help
+我自己来	do it myself
+我们合作吧	let us work together
+我很想你	i miss you
+我也想你	i miss you too
+你放心吧	rest assured
+别担心	do not worry
+我保证	i promise
+下次一定	next time for sure
+这次我付	this time i pay
+你今天怎么样	how are you today
+我同意	i agree
+麻烦你了	thanks for your trouble
+多多关照	please look after me
+给我一张发票	an invoice, please
+公交车来了	the bus is here
+出租车来了	the taxi is here
+我早上八点起床	i get up at eight in the morning
+发个微信给我	send me a WeChat message
+我需要吃药	i need to take medicine
+这个多少钱一斤	how much per 500 g
+来两斤	two jin (1 kg), please
+没有事的	it is okay, do not worry
+说话算话	i keep my word
+真的不用	really, do not bother
+现在几点了	what time is it now
+今天几号	what is the date today
+这周有什么安排	any plans this week
+下个月要出差	traveling for work next month
+时间过得真快	time flies
+再等五分钟	wait five more minutes
+我迟到了	i am late
+今天休息	off work today
+明天早上开会	meeting tomorrow morning
+会议推迟了	the meeting is postponed
+这个我来做	handle this
+进度怎么样了	how is the progress
+还需要三天	need three more days
+已经完成了大半	mostly finished
+我先去开会	going to the meeting first
+老板找我	the boss is looking for me
+工资什么时候发	when is payday
+我要辞职	i am quitting
+加班到很晚	working late
+这个项目很难	this project is hard
+帮我订个会议室	book a meeting room for me
+发个邮件给他	send him an email
+附件我看了	i saw the attachment
+合同还没签	contract not signed yet
+客户不满意	the client is unhappy
+价格还能谈	the price is negotiable
+我们签合同吧	let us sign the contract
+这单生意成了	the deal is done
+今天下雨了	it rained today
+明天会放晴	it will clear up tomorrow
+外面下雪了	it is snowing outside
+风太大了	the wind is too strong
+今天降温了	it got colder today
+天气真舒服	the weather is pleasant
+记得带伞	remember to bring an umbrella
+别晒着了	do not stay in the sun too long
+我们去吃饭	let us go eat
+这家店好吃	this restaurant is good
+点个菜吧	let us order
+再来一瓶啤酒	one more beer
+不要放香菜	no cilantro please
+少放辣椒	less chili please
+我吃素	i am vegetarian
+这个菜辣吗	is this dish spicy
+我请客	my treat
+打包带走	to go please
+外卖还没到	the delivery has not arrived
+水开了	the water is boiling
+给我倒杯水	pour me some water
+咖啡凉了	the coffee got cold
+这个不好吃	this does not taste good
+我吃过了	i already ate
+少食多餐	eat small frequent meals
+太咸了	too salty
+有点甜	a bit sweet
+这个多少钱	how much is this
+能便宜点吗	can you make it cheaper
+有没有折扣	any discount
+我买两件	two of these please
+这个尺码不对	this size is wrong
+有大一号的吗	do you have one size bigger
+可以试穿吗	can i try it on
+我只要这个	i only want this one
+换个颜色	a different color please
+质量问题	a quality problem
+我要退货	i want to return this
+什么时候发货	when will it ship
+快递还没到	the package has not arrived
+给我开张收据	give me a receipt
+支持货到付款吗	is cash on delivery ok
+这个有货吗	is this in stock
+我先看看	let me look around
+在哪里付款	where do i pay
+附近有超市吗	is there a supermarket nearby
+帮我找个车位	find me a parking spot
+车停在哪里	where is the car parked
+堵车了	traffic is heavy
+绕一下路	take a detour
+前面右转	turn right ahead
+一直往前走	go straight ahead
+走错了	wrong way
+我打车去	take a taxi
+地铁几号线	which metro line
+在哪换乘	where do i transfer
+首班车几点	what time is the first train
+末班车快没了	the last train is leaving
+我要加油	i need to refuel
+车坏了	the car broke down
+叫个拖车	call a tow truck
+我迟到了五分钟	i am five minutes late
+在路口等我	wait for me at the corner
+导航设好了	navigation is set
+这条路通吗	is this road open
+我坐高铁去	take the bullet train
+机票订好了	flights are booked
+酒店几点入住	what time is hotel check in
+换个房间	a different room please
+这里可以停车吗	can i park here
+你住几楼	what floor do you live on
+钥匙忘带了	i forgot the keys
+门锁了	the door is locked
+帮我开个门	open the door for me
+水费交了	paid the water bill
+电费还没交	electricity bill unpaid
+网络断了	the internet is down
+重启一下路由器	restart the router
+这个房间太吵	this room is too noisy
+空调不制冷	the ac is not cooling
+我要换个灯泡	change the bulb
+房租什么时候交	when is rent due
+我感冒发烧了	i have a cold and a fever
+量个体温	take my temperature
+退烧了吗	did the fever go down
+我肚子疼	my stomach hurts
+牙疼得厉害	terrible toothache
+我失眠了	i cannot sleep
+别熬夜	do not stay up late
+多运动	exercise more
+我减肥呢	i am on a diet
+戒了	i quit it
+少抽烟	smoke less
+别喝酒	do not drink
+我过敏了	i am allergic
+去医院挂号	register at the hospital
+做个检查	get examined
+这个药一天三次	take this 3 times a day
+饭后吃	take it after meals
+我预约了医生	i have a doctor appointment
+体检报告出来了	the checkup report is out
+恢复得不错	recovering well
+别担心是小问题	do not worry, it is minor
+我没事	i am fine
+着凉了	caught a chill
+孩子放学了	school is out for the kids
+接孩子	pick up the kids
+作业写完了	homework is done
+考试考得怎么样	how was the exam
+我考砸了	i failed the exam
+这道题不会	i cannot do this problem
+讲得很清楚	explained very clearly
+我再想想	let me think again
+这道题简单	this problem is easy
+我复习完了	finished reviewing
+这本书好看	this book is good
+借我一本书	lend me a book
+图书馆关门了	the library is closed
+我迟交作业了	submitted homework late
+这个专业好就业	this major leads to good jobs
+我要考研	i am taking the postgrad exam
+学得很开心	enjoy learning
+再给我一次机会	give me one more chance
+我尽力了	i tried my best
+下次注意	will be careful next time
+我保证不再	i promise, never again
+谢谢你帮我	thanks for helping me
+你帮大忙了	you helped a lot
+改天再聚	let us meet another day
+保持联系	keep in touch
+有机会合作	hope to work together
+到家说一声	let me know when you are home
+我到了	i arrived
+你在忙吗	are you busy
+打扰一下	excuse me
+借过一下	let me pass
+请问一下	may i ask
+不好意思借过	sorry excuse me
+这个是谁的	whose is this
+你认识他吗	do you know him
+他是我朋友	he is my friend
+她是我同事	she is my colleague
+我们见过面	we have met
+好久没联系了	we have not talked in a while
+最近忙什么	what have you been busy with
+我最近很好	i am doing well
+祝你成功	wish you success
+加油你可以的	you can do it
+别放弃	do not give up
+再坚持一下	hold on a bit longer
+马上就好了	almost done
+已经很好了	it is already good
+我支持你	i support you
+你说得有道理	you have a point
+我再考虑一下	let me think it over
+这个我不懂	i do not understand this
+请教一下	may i ask you something
+教教我	teach me
+我学会了	i learned it
+你太客气了	you are too polite
+哪里哪里	not at all
+太差了	very bad
+我受不了	i cannot stand it
+太神奇了	amazing
+真的假的	for real
+我晕了	i am dizzy
+太感动了	so touching
+我无语了	i have no words
+有点尴尬	a bit awkward
+别生气	do not be angry
+我道歉	i apologize
+我们和好吧	let us make up
+给我个解释	give me an explanation
+我不同意	i disagree
+这不是我的错	it is not my fault
+我们谈谈	let us talk
+先冷静一下	calm down first
+别急慢慢说	no rush, take your time
+我听你的	follow you
+随你便	as you wish
+都行都可以	anything works
+你开心就好	as long as you are happy
+我们去看电影	let us watch a movie
+这场球赛好看	this match is good
+我们一起打篮球	let us play basketball
+我周末跑步	i run on weekends
+游泳很舒服	swimming is relaxing
+我累了想躺会儿	i am tired, let me lie down
+这个游戏好玩	this game is fun
+别玩手机了	get off your phone
+早点睡吧	go to bed early
+我起床了	i am up
+刷牙洗脸	brush teeth and wash up
+我穿什么好	what should i wear
+这件好看	this one looks good
+太紧了	too tight
+松一点	a bit looser
+我洗个澡	let me shower
+头发长了	my hair is long
+去剪头发	get a haircut
+我买件衣服	buy some clothes
+这双鞋磨脚	these shoes rub
+换个袋子	a different bag
+带伞了吗	did you bring an umbrella
+我忘带手机了	i forgot my phone
+手机响了	the phone is ringing
+我接个电话	let me answer
+挂了吧	hanging up now
+信号断断续续	signal is breaking up
+我听不到你的声音	i cannot hear your voice
+大声一点	speak louder
+小声一点	quieter please
+稍后再打	call back later
+我发信息给你	text you
+你看到了吗	did you see it
+我发错了	sent it by mistake
+撤回了一条消息	recalled a message
+这个链接打开	open this link
+我打不开	i cannot open it
+页面加载不出来	the page will not load
+截图给你看	send you a screenshot
+密码是多少	what is the password
+我登录不上	cannot log in
+账号被锁了	account locked
+重新输一遍	enter it again
+验证码发来了	i got the code
+网络信号弱	weak signal
+这个软件好用	this app is good
+下载一下	download it
+更新到最新版	update to the latest
+内存满了	storage is full
+清理一下	clean it up
+重启手机	restart the phone
+电池不耐用	battery does not last
+屏幕碎了	the screen is broken
+贴膜了没有	is there a screen protector
+我拍照给你	take a photo for you
+这张删掉	delete this one
+放大一点	zoom in a bit
+这个字念什么	how do you pronounce this
+这个怎么拼	how do you spell it
+中文怎么说	how do you say it in chinese
+翻译成中文	translate into chinese
+我不懂中文	i do not understand chinese
+请说慢一点	please speak slower
+你说得很流利	you speak fluently
+我听不懂	i cannot follow
+再说一次	once more
+这个字怎么写	how do you write this
+举个例子	give an example
+有点难	a bit hard
+简单得很	very easy
+我记住了	i remember it
+你记一下	take note
+提醒我	remind me
+我差点忘了	i almost forgot
+今天忘了带	forgot to bring it today
+下次记得	remember next time
+先说到这里	let us stop here
+再说就晚了	it will be too late if we wait
+我先去忙	let me get back to work
+有空来玩	come over when free
+我们下次见	see you next time
+我马上出发	i am leaving right now
+路上小心	be careful on the road
+到了给我电话	call me when you arrive
+我在楼下等你	i am waiting downstairs
+帮我带杯咖啡	bring me a coffee
+今天轮到我值班	i am on duty today
+这个方案可行	this plan works
+我先试试看	let me give it a try
+有问题随时找我	contact me anytime
+麻烦确认一下	please confirm
+今天不用加班	no overtime today
+我们分头行动	let us split up
+我把地拖了	i mopped the floor
+垃圾我倒了	i took out the trash
+衣服晾上了	the laundry is hung up
+这件要手洗	this one needs hand washing
+洗衣机在洗	the washing machine is running
+我扫个地	let me sweep
+屋里太乱了	the room is a mess
+收拾一下桌子	tidy up the table
+抹布在哪	where is the rag
+我拖一下地	let me mop the floor
+该换床单了	the sheets need changing
+被子晒过了	i aired the quilt
+碗我洗了	i washed the dishes
+锅还没刷	the pot is not scrubbed
+我做个饭	let me cook
+今天做什么菜	what shall we cook today
+我去买菜	i am going grocery shopping
+买把小葱	buy some scallions
+姜快用完了	we are almost out of ginger
+冰箱空了	the fridge is empty
+鸡蛋还有一个	only one egg left
+米快没了	we are running low on rice
+油该买了	we need to buy oil
+我烧壶水	let me boil the kettle
+饭马上好	dinner will be ready soon
+先盛一碗	serve a bowl first
+桌子擦好了	the table is wiped
+碗筷摆好了	the dishes are set
+我洗碗你擦桌	i wash and you dry
+菜凉了再热一下	reheat the cold dish
+少放点油	use less oil
+糖放多了	too much sugar
+这道菜咸了	this dish is salty
+汤正好	the soup is just right
+切个西瓜	cut the watermelon
+水果洗了吗	did you wash the fruit
+苹果有点蔫	the apples are a bit old
+香蕉熟了	the bananas are ripe
+菜新鲜吗	is the produce fresh
+来半斤肉	half a jin (250 g) of meat please
+帮我挑条鱼	help me pick a fish
+豆腐嫩一点	softer tofu please
+来头蒜	one bulb of garlic please
+我喂猫了	i fed the cat
+猫该驱虫了	the cat needs deworming
+狗要遛了	the dog needs a walk
+它不吃东西	it is not eating
+猫砂该换了	change the cat litter
+狗看病了吗	did the dog see the vet
+花该浇水了	the flowers need watering
+叶子黄了	the leaves turned yellow
+这盆放阳台	put this pot on the balcony
+我剪个枝	let me trim the branches
+种子发芽了	the seeds sprouted
+快递放驿站了	the package is at the station
+取件码多少	what is the pickup code
+我帮你签收	sign for it
+包裹破损了	the package is damaged
+这个要验货	inspect this before accepting
+退货要运费吗	do i pay shipping for a return
+换货几天到	when will the replacement arrive
+尺码表在哪	where is the size chart
+这个偏大	this runs large
+这个偏小	this runs small
+棉的还是化纤	cotton or synthetic
+这个褪色吗	does the color fade
+洗过会缩水吗	will it shrink after washing
+有别的款式吗	do you have other styles
+这个多少钱一条	how much per piece
+两条一起买	take two
+能开发票吗	can you issue an invoice
+我扫你还是你扫我	do i scan you or you scan me
+现金可以吗	is cash ok
+找零给我	give me the change
+这个多少钱一个	how much per piece
+便宜两块行不行	can you take off two yuan
+我考虑一下再买	let me think before buying
+先放这儿吧	leave it here for now
+我下次再来	come back
+帮我包起来	wrap it up please
+这个有黑色的吗	do you have this in black
+白色更耐脏吗	does white show less dirt
+这个耐磨吗	is this durable
+防水的吗	is it waterproof
+电池能换吗	is the battery replaceable
+保修多久	how long is the warranty
+说明书给我	give me the manual
+这个怎么用	how do i use this
+开机键在哪	where is the power button
+长按三秒	press and hold for three seconds
+点一下这里	tap here once
+往左滑动	swipe left
+输入密码	enter the password
+确认支付	confirm payment
+支付成功	payment successful
+支付失败	payment failed
+余额不足	insufficient balance
+转账过去了	i sent the transfer
+你收到钱了吗	did you get the money
+我转错了	i sent it to the wrong person
+退我一半	refund me half
+这月超支了	we are over budget this month
+我记个账	let me note the expense
+先欠着	owe it for now
+回头还你	pay you back
+借我一百块	lend me a hundred
+不用还了	no need to pay it back
+这个我出	cover this
+你算一下	you do the math
+一共多少	how much in total
+含服务费吗	does it include service charge
+有停车位吗	is there parking
+车停地下了	the car is in the underground garage
+我挪一下车	let me move the car
+别停这儿	do not park here
+要贴条了	they will ticket it
+年检过了吗	is the inspection done
+保险该续了	the insurance needs renewing
+轮胎该换了	the tires need changing
+胎压够吗	is the tire pressure ok
+玻璃水没了	out of washer fluid
+我加个油	let me refuel
+加满	fill it up
+加九十二	92 octane please
+发票放车里	keep the invoice in the car
+我开导航	let me turn on navigation
+前方拥堵	traffic ahead
+下高速要走哪个口	which exit for the highway
+限速多少	what is the speed limit
+保持车距	keep your distance
+我踩个刹车	i am braking
+靠边停	pull over
+我倒车	let me back up
+注意行人	watch for pedestrians
+安全带系好	buckle up
+到目的地了	we have arrived
+帮我拿一下行李	help me with the luggage
+行李超重了吗	is the bag overweight
+我托运一件	check one bag
+随身带上飞机	carry it on
+登机口在哪	where is the gate
+几点开始登机	what time does boarding start
+我的座位靠窗	i have a window seat
+延误到什么时候	how long is the delay
+取票机在哪	where are the ticket machines
+我改签一下	let me change my ticket
+候车室在哪	where is the waiting room
+站台几号	which platform
+车晚点了	the train is delayed
+我到了站台	i am at the platform
+帮我拍张合影	take a photo of us
+笑一个	smile
+这个角度好	this angle is good
+再拍一张	one more shot
+景点要门票吗	is there an entrance fee
+这里能拍照吗	can i take photos here
+人太多了	it is too crowded
+我们排队吧	let us queue
+前面就是了	it is just ahead
+绕一圈看看	let us walk around
+这里值得来	this place is worth visiting
+风景真好	the view is great
+我买点特产	buy some local specialties
+这个能带上飞机吗	can this go on the plane
+几点闭馆	what time does it close
+有讲解吗	is there a guided tour
+我们走快点	let us walk faster
+我脚磨破了	i have a blister
+休息一下再走	let us rest before walking
+附近有厕所吗	is there a restroom nearby
+我借个充电宝	let me borrow a power bank
+信号只有一格	only one bar of signal
+连不上网	cannot connect
+我热点开了	my hotspot is on
+你连我的	use your hotspot
+网很慢	the internet is slow
+页面打不开	the page will not open
+我刷新一下	let me refresh
+缓存清了	cache cleared
+软件闪退了	the app crashed
+要更新才能用	it needs an update
+我重装一次	let me reinstall it
+账号注销了	the account is deleted
+实名了吗	is it verified
+我收到短信了	i got the text
+是验证码吗	is it the code
+别把码告诉别人	do not share the code
+这是诈骗	this is a scam
+我拉黑他了	i blocked them
+别点这个链接	do not click this link
+我密码忘了	i forgot my password
+帮我重置一下	help me reset it
+换个手机号	change the phone number
+套餐不够用	the plan is not enough
+流量超了	over the data limit
+我打个电话给你	give you a call
+电话没人接	nobody picked up
+我挂断重打	let me redial
+信号不好听不清	bad line cannot hear
+我发语音给你	send a voice message
+你听到吗	can you hear me
+我在开会不方便	i am in a meeting
+回头聊	let us talk later
+我在线	i am online
+我下线了	i am off now
+刚看到消息	just saw your message
+抱歉回晚了	sorry for the late reply
+我在路上不方便打字	i cannot type while on the road
+你到了说一声	let me know when you arrive
+我把定位发你	send you my location
+你走哪个门	which gate are you at
+我在门口等你	i am waiting at the door
+别乱跑	do not wander off
+跟紧我	stay close
+人走散了	we got separated
+在原地等	wait right here
+我打个车回去	take a cab back
+几点集合	what time do we meet
+别迟到了	do not be late
+我提前到	arrive early
+我可能要晚十分钟	i may be ten minutes late
+路上堵车了	stuck in traffic
+你们先开始	go ahead without me
+我先撤了	i am heading out
+改时间了吗	did we change the time
+地点变了吗	did the place change
+我记在日历里	i put it in my calendar
+提醒我明天	remind me tomorrow
+这个月几号截止	what is the deadline
+我赶一下	let me rush it
+今天必须交	it must be submitted today
+我加个班	let me work overtime
+明早上交	submit it tomorrow morning
+这个谁负责	who owns this
+我来对接	follow up
+我拉个群	let me make a group
+群里说	say it in the group
+我私聊你	message you privately
+这个我要确认	let me confirm this
+等回复	waiting for a reply
+催一下他	nudge him
+客户改需求了	the client changed the requirements
+时间不够了	there is not enough time
+我们砍一点	let us cut some scope
+先做个原型	make a prototype first
+我列个清单	let me list it out
+这个我记下了	i noted this
+下次别再忘	do not forget next time
+交接给我	hand it over to me
+我不了解背景	i lack the context
+我带个新人	i am onboarding someone
+他刚入职	he just joined
+试用期多久	how long is the probation
+什么时候转正	when do i become permanent
+我提个离职	i am resigning
+最后一天是周五	my last day is friday
+这个月报销了吗	was it reimbursed
+发票给我	give me the invoice
+我填个单子	let me fill the form
+审批通过了	it is approved
+领导还没签	the boss has not signed
+我请个半天	take a half day
+下午我不在	i am out this afternoon
+手机保持畅通	keep your phone on
+有事打电话	call if needed
+我调个班	swap my shift
+这周我值日	i am on duty this week
+明天我休息	i am off tomorrow
+我今天心情好	i am in a good mood
+有点烦	a bit annoyed
+别烦我了	leave me alone
+我想静一静	i need some quiet
+我压力很大	i am under a lot of pressure
+别想太多	do not overthink it
+会好的	it will be fine
+有什么我能帮的	what can i do
+说出来就好多了	talking helps
+我理解你的感受	i understand
+这确实难	that is genuinely hard
+我站在你这边	i am on your side
+别往心里去	do not take it personally
+我不是那个意思	i did not mean it that way
+我误会你了	i misjudged you
+是我不好	it was my fault
+你别怪他	do not blame him
+这事不怪谁	nobody is to blame
+我们各退一步	let us both step back
+这样公平吗	is this fair
+我不服	i do not accept it
+算了不说了	forget it
+得嘞	got it
+没问题包在我身上	leave it to me
+我试试	try
+我办不到	i cannot pull it off
+这个我做不到	i cannot do this
+不是我不帮	it is not that i will not help
+条件不允许	the conditions do not allow it
+我这次真不行	i really cannot this time
+下回一定	next time for sure
+饶了我吧	spare me
+你放过我吧	let me off
+别再提了	do not bring it up again
+提也得提	we have to bring it up
+我硬着头皮上	push through
+你行的	you can do it
+你做得很好	you did well
+我为你骄傲	i am proud of you
+真有你的	impressive
+你太厉害了	you are amazing
+我服了	i am convinced
+这个想法不错	nice idea
+我没想到	i did not think of that
+我不太同意	i partly disagree
+我有保留意见	i have reservations
+我们求同存异	let us agree to disagree
+这个先放着	leave this for now
+优先级高	this is high priority
+先做紧急的	urgent first
+能拖就拖	put it off if possible
+这话不对	that is not right
+我不同意这个说法	i disagree with that
+你这么说伤人	that hurts
+对不起我说重了	sorry that was harsh
+我道歉是我态度不好	i apologize for my tone
+我们重新开始	let us start over
+给个机会	give me a chance
+我不计较了	let it go
+你大度	you are generous
+我小气了	i was petty
+这事翻篇	it is water under the bridge
+以后多沟通	let us communicate more
+我把话说清楚	let me be clear
+你的意思是	what do you mean
+我再说一遍	let me say it again
+听懂了吗	did you get it
+没听懂	i did not get it
+哪里不懂问我	ask me if unclear
+这个我熟	i know this well
+我做过	did it before
+我有经验	i have experience
+交给我放心	you can count on me
+我盯一下	let me keep an eye on it
+有进展告诉你	update you
+暂时没消息	no news yet
+我再问问	let me check again
+他不确定	he is not sure
+可能黄了	it may fall through
+先别声张	keep it quiet
+我保密	keep it secret
+这个我不方便说	i cannot say
+你别问太多	do not ask too much
+我晚点答复你	get back to you
+今天能给答案吗	can you answer today
+我尽量	try
+不能保证	no guarantees
+我尽力	best effort
+这价我接不了	i cannot take this price
+再想想	let me think
+我先算一下	let me do the math
+这个划算	this is a good deal
+不划算	not worth it
+性价比一般	not great value
+贵是贵了点	a bit pricey
+但好用	but it works well
+我认了	i accept it
+这个真香	this is great
+我后悔了	i regret it
+早知道就不	if i had known
+下次学乖	know better
+吃一堑长一智	a lesson learned
+我长记性了	i remember the lesson
+这楼有物业吗	is there property management
+物业费多少	how much are the fees
+我报修一下	let me file a repair
+水管漏了	the pipe is leaking
+灯不亮了	the light is out
+马桶堵了	the toilet is clogged
+门锁不好使	the lock is sticky
+我换个锁芯	change the lock cylinder
+网络要开通	i need the internet installed
+燃气要充值	top up the gas
+水表读数多少	what is the water meter reading
+我交个物业费	pay the management fee
+楼道灯坏了	the hallway light is out
+电梯又故障	the elevator broke again
+我按个楼层	press the floor button
+让一让先下后上	let people off first
+快递不上门	no door delivery
+放快递柜	put it in the locker
+柜机取件	pick it up from the locker
+我拒收了	i refused the delivery
+地址写错了	wrong address
+电话留错了	wrong phone number
+我改一下地址	let me fix the address
+今天能发吗	can you ship today
+发什么快递	which courier
+几天能到	how many days
+加急多少钱	what is express cost
+我送到前台	leave it at the desk
+记得锁门	remember to lock up
+煤气关了吗	is the gas off
+我关个窗	let me close the window
+下雨忘收衣服	forgot to bring in the laundry
+衣服白洗了	the laundry was wasted
+地滑小心	watch out it is slippery
+楼梯口黑	the stairwell is dark
+我拿手电	let me get a flashlight
+电池没电了	the battery is dead
+换个电池	replace the battery
+这个能修吗	can this be fixed
+修不如换	not worth repairing
+我找个师傅	let me find a repairman
+上门多少钱	what is the house call fee
+明天上午可以	tomorrow morning works
+我在家等	wait at home
+钥匙放门口	keys are by the door
+我出个门	i am stepping out
+马上回来	back soon
+晚饭别等我了	do not wait up for me
+我带点回去	bring something back
+想吃点什么	what do you feel like
+随便吃点	something light
+别太辣	not too spicy
+多点汤	more soup
+我下碗面	let me cook noodles
+水开了下面	noodles in boiling water
+面煮软点	cook the noodles softer
+过下凉水	rinse with cold water
+调个料汁	make a sauce
+加点生抽	add soy sauce
+来点醋	some vinegar
+放点蒜末	add some minced garlic
+起锅烧油	heat the oil
+炒香出味	stir until fragrant
+火大了	the heat is too high
+关小火	turn down the heat
+尝尝咸淡	taste for seasoning
+可以出锅了	ready to plate
+盛盘上桌	plate it up
+我查个成绩	let me check the score
+这学期课多	heavy course load
+我选个课	let me pick a course
+这门课难修	this course is tough
+我挂了一科	i failed one subject
+补考在下周	the retake is next week
+我把笔记借你	lend you my notes
+重点是什么	what is the key point
+我划一下	let me mark it
+这题考过	this was on the exam
+我背一下	memorize it
+单词还没记	i have not learned the words
+我练一下口语	let me practice speaking
+听力太难	listening is hard
+我读一遍	read it once
+你纠正我	correct me
+发音准吗	is my pronunciation right
+这个词怎么用	how do i use this word
+举个例子吧	give an example
+我懂了	i get it now
+再说深一点	go a bit deeper
+这个我背过	i memorized this
+考试加油	good luck on the exam
+我考完请你吃饭	treat you after
+我预约了牙科	i booked the dentist
+牙要补	the tooth needs filling
+智齿要拔	i need the wisdom tooth out
+拍个片子	take an x ray
+化验结果出来了吗	are the lab results in
+我要复查	i need a follow up
+医生怎么说	what did the doctor say
+要输液吗	do i need an IV
+这个药有副作用	this medicine has side effects
+饭后服用	take after meals
+一天两粒	two pills twice a day
+忌辛辣	avoid spicy food
+多喝水多休息	drink water and rest
+我请天假	take a day off
+病假条开吗	can i get a sick note
+我挂个专家号	book a specialist
+排队叫号	wait for your number
+在三楼抽血	blood draw is on floor three
+我空腹来的	i came fasting
+结果要等两天	results take two days
+我复查一下血压	let me recheck my blood pressure
+血压偏高	my blood pressure is slightly high
+要控盐	less salt
+我戒糖	i cut out sugar
+多走路	walk more
+别久坐	do not sit too long
+我拉伸一下	let me stretch
+跑完步真舒服	feels good after a run
+我打车走	leave by taxi
+我坐地铁	take the metro
+我坐公交	take the bus
+我骑车去	ride there
+我走路过去	walk over
+我开车去	drive there
+车停在楼下	the car is downstairs
+我在地铁口	at the metro exit
+这趟车几点来	when does this bus come
+我错过班车	i missed the bus
+前面堵车	traffic ahead
+堵得厉害	jammed badly
+我绕一下	detour
+换个路线	take another route
+导航说左转	the map says turn left
+前面掉头	turn around ahead
+到了叫我	call me when we arrive
+我先下车	get off first
+你在哪个口	which exit are you at
+我在西门	at the west gate
+东门见	meet at the east gate
+我在车站等	wait at the station
+车马上到	the car is almost here
+司机打不通电话	cannot reach the driver
+我把行程发你	send you my trip details
+大概半小时	about half an hour
+还要多久	how much longer
+快到了	almost there
+我晚十分钟	ten minutes late
+你先走	you go ahead
+我随后就到	follow soon
+别等我了	do not wait for me
+顺路捎我	pick me up if you pass
+我搭你的车	ride with you
+我送你过去	take you there
+路太远	the road is too far
+我改天去	go another day
+今天不出门	not going out today
+我在高速上	i am on the highway
+前面有测速	speed camera ahead
+我下匝道了	i took the exit
+加油站没油了	gas station is out
+我去充电	go charge it
+车没电了	the car battery is dead
+胎没气了	the tire is flat
+车打不着火	will not start
+我叫了拖车	i called a tow truck
+停车费多少	how much is parking
+我没车位	no parking spot
+我停路边	i parked by the road
+这里不能停	no parking here
+我马上挪车	move the car now
+出口在右边	the exit is on the right
+往前走	go straight
+到路口停	stop at the corner
+我左转到不了	cannot turn left here
+这条路封了	this road is closed
+我走辅路	use the side road
+天桥在哪	where is the footbridge
+我过马路	i am crossing the street
+红灯还很久	long wait at the light
+我在这边等	wait on this side
+你往南走	head south
+往北更近	north is closer
+我在桥下	under the bridge
+河边见	meet by the river
+地铁口有伞	there is an umbrella at the metro exit
+我忘带卡了	i forgot my card
+刷卡没反应	the card did not work
+我扫码进站	scan to enter
+票卖完了	tickets are sold out
+我改签	change my ticket
+我退票	refund the ticket
+候补成功了	the waitlist worked
+我在候车厅	i am in the waiting hall
+检票口变了	the gate changed
+我赶不上飞机	miss the flight
+航班取消了	the flight is canceled
+延误到晚上	delayed until evening
+我在登机口	at the gate
+行李超重	baggage is overweight
+取行李的地方	baggage claim
+我打车去机场	taxi to the airport
+接机的人没来	the driver did not show
+我在到达层	at arrivals
+几号出口	which exit is it
+我跟着导航走	i follow the map
+定位定不准	the location is off
+我发位置给你	send my location
+你打开地图	open the map
+我在电梯里	i am in the elevator
+电梯坏了	the elevator is broken
+我走楼梯	take the stairs
+你在几层	which floor are you on
+我在负一层	i am on the basement level
+我上楼等你	wait upstairs
+楼下有门禁	the door needs a card
+我按门铃	ring the bell
+没人应	no answer
+我放门口了	left it at the door
+你开门	open the door
+我钥匙丢了	lost my keys
+我找人开锁	call a locksmith
+我点外卖	order takeout
+外卖到了	the delivery has arrived
+餐洒了一半	the food spilled
+换个店吃	let us try another place
+我不吃辣	i do not eat spicy
+不要香菜	no cilantro
+多加点醋	more vinegar
+几分熟	how would you like it cooked
+牛排要全熟	well done please
+我先点菜	order first
+你点吧	you order
+这个来一份	one of this
+再来一瓶	another bottle
+我买单	pay
+有优惠吗	any discount
+发票开吗	can i get an invoice
+我预约了座位	i booked a table
+前面还有十桌	ten tables ahead
+我等位	wait for a seat
+孩子餐椅	a high chair
+靠窗的座位	a window seat
+这里有人吗	is this taken
+上菜太慢	the food is slow to come
+我叫服务员	call the waiter
+菜上错了	wrong dish
+这个不是我点的	this is not mine
+麻烦退一下	please take it back
+肉没熟	the meat is raw
+有点味道	it smells off
+再吃点	eat more
+我不饿	not hungry
+喝点水	drink some water
+我渴了	i am thirsty
+咖啡太苦	the coffee is too bitter
+我加糖	add sugar
+茶凉了	tea went cold
+我热一下	heat it
+微波炉在哪	where is the microwave
+饭在锅里	rice is in the pot
+我煮个面	cook noodles
+鸡蛋没了	out of eggs
+盐用完了	out of salt
+我洗菜	wash the veggies
+你切肉	you cut the meat
+锅糊了	the pot burned
+油烟开大点	fan on high
+碗没洗	dishes are unwashed
+我今晚做饭	cook tonight
+明天带饭	pack lunch
+饭盒在我包里	lunch box is in my bag
+少吃油腻	eat less grease
+别空腹喝咖啡	do not drink coffee empty
+我早饭没吃	no breakfast today
+中午吃什么	what for lunch
+你尝尝看	give it a try
+这个能吃吗	is this edible
+过期了	it expired
+放冰箱	put it in the fridge
+冻起来	freeze it
+我化了冰	i defrosted it
+这块牛排不错	this steak is good
+少喝饮料	less soda
+我泡杯茶	make tea
+咖啡续杯	refill please
+分开装	bag them apart
+餐具给我一套	cutlery please
+纸巾在哪	where are napkins
+孩子不吃这个	kid will not eat this
+我少放油	less oil
+这汤太咸	too salty
+味道刚好	tastes right
+我再加饭	more rice
+水果洗了	washed the fruit
+苹果削皮	peel the apple
+我榨果汁	juice it
+面包放硬了	bread went hard
+烤一下	toast it
+蛋糕几寸	what cake size
+我点了蜡烛	i lit a candle
+我订个蛋糕	order a cake
+不要奶油	no cream
+外卖备注	notes on the order
+放门口别敲门	leave it at the door, do not knock
+餐盒要一次性	disposable boxes
+我取消订单	cancel the order
+退款到微信	refund to WeChat
+骑手打电话了	the courier called
+我在取餐点	at the pickup point
+排队太长	the line is long
+换一家	eat elsewhere
+这家太贵	too expensive
+团购有券	coupon for group buy
+我看看评价	read reviews
+几点关门	when do you close
+还营业吗	are you open
+我逛一下店	browse
+这个有几码	what sizes
+我试一下	try it
+小一号	one size down
+这件合适	this fits
+颜色不对	wrong color
+有别的款	any other style
+能便宜点	can you go lower
+我讲讲价	any cheaper
+打折到几号	sale until when
+会员有积分	member points
+我用券	use a coupon
+我扫码付	scan to pay
+刷卡失败	card declined
+我付过了	i already paid
+重复扣款	charged twice
+我找客服	contact support
+退货运费	return shipping fee
+我申请退货	return it
+钱几天到	when does it refund
+包装破了	packaging damaged
+发错货了	wrong item
+快递放驿站	leave it at the station
+驿站几点关	what time does the station close
+我去取件	pick it up
+包裹在路上	parcel is on the way
+显示已签收	says delivered
+我没收到	i did not get it
+我查一下单号	check the tracking
+催一下快递	chase the courier
+送到前台	at the front desk
+要本人签收	needs my signature
+我改地址	change the address
+这个能寄吗	can you ship this
+寄到老家	send to my hometown
+运费到付	pay on delivery
+排队结账	line to pay
+袋子多少钱	how much for a bag
+我自带袋子	i have my own bag
+这个新鲜吗	is it fresh
+挑两个	pick two
+我称一下	weigh it
+打价签	put a price tag on
+货架没有	empty shelf
+仓库还有吗	any left in the warehouse
+我留一个	hold one for me
+到货通知我	notify me when it arrives
+这个保修多久	how long is the warranty
+发票丢了	lost the receipt
+我开张票	get an invoice
+以旧换新	trade in
+我修一下	fix it
+修要多少钱	how much for the repair
+能修好吗	can it be fixed
+我换个新的	get a new one
+这个耐不耐用	is it durable
+我看看说明书	read the manual
+配件单独卖	spare parts sold separately
+电池型号	battery model
+我下单了	i placed the order
+还没发货	not shipped yet
+店家没回我	the shop has not replied
+我投诉了	i filed a complaint
+申请退款	i want a refund
+客服推责任	support blames others
+我找平台	ask the platform
+这店不靠谱	this shop is unreliable
+我换一家	switch shops
+我比价	compare
+别的平台便宜	cheaper elsewhere
+今天有活动	there is a promo today
+我凑个单	bundling to hit the minimum
+满减到多少	how much to spend for the discount
+我买多了	bought too much
+先放你这	keep it at your place
+我明天来拿	fetch tomorrow
+钥匙扣有吗	any keychain
+我买张卡	buy a card
+充值在哪	where can i top up
+我换现金	pay in cash
+发票要抬头	the invoice needs a title
+税号多少	what is the tax number
+我拍张照	take a photo
+这个链接发我	send me the link
+我收藏了	i saved it
+加购物车	add to cart
+我清空购物车	empty the cart
+我改手机号	change my phone number
+账号登不上	cannot log in
+我找回密码	reset the password
+验证码没收到	no code received
+我换个号	let me try another number
+实名过了	real-name verification done
+我注销账号	close my account
+订单取消了	order canceled
+我看看历史	see my orders
+积分能抵吗	can points cover it
+我签到	check in daily
+有赠品吗	any free gift
+我评价一下	review it
+好评返现	cash for review
+这个差评	bad review
+我删掉评价	delete my review
+我开个会	i am in a meeting
+改到明天	moved to tomorrow
+几点开始	what time does it start
+我拉你进群	add you to the group
+议程发我	send the agenda
+我准备材料	prepare materials
+我汇报一下	report
+数据还没出	data not out yet
+我核对一遍	double check
+这个我负责	i own this
+我找人对接	find a contact
+进度怎么样	how is the progress
+今天能交吗	can it be done today
+我加班赶	work late
+明天上午交	due tomorrow morning
+我请个假	take leave
+我明天休假	off tomorrow
+我早走一会	leaving a bit early
+我回个电话	call back
+这个我不同意	i disagree
+我补充一点	one more point
+我说完了	that is all
+大家有意见	any comments
+我记一下	note it
+会议纪要	minutes
+谁负责跟进	who follows up
+我同步给团队	sync the team
+这个先放一放	let us park this
+优先级更高	it is higher priority
+排期定了	schedule set
+需求变了	requirements changed
+我改一版	revise
+这版可以	this version works
+我发终稿	send the final
+文件太大	the file is too big
+我压缩一下	zip it
+我传不上去	cannot upload
+共享权限	share permission
+我开给你	grant you access
+链接过期	the link expired
+我重新发	resend
+我没收到邮件	i did not get the email
+我看看附件	check the attachment
+表格填好	the form is filled
+签字在哪	where to sign
+我盖章	stamp it
+合同寄出	the contract was sent
+我扫一份	scan a copy
+打印一份	print one
+纸没了	out of paper
+卡纸了	jam in the printer
+墨盒没墨	out of toner
+我换墨盒	replace it
+电脑重启了	the computer restarted
+我蓝屏了	blue screen
+网断了	internet dropped
+我换个网	switch network
+密码不对	wrong password
+我锁屏了	i locked the screen
+我截个图	screenshot
+投屏试试	try to cast
+投影仪没信号	the projector has no signal
+我带数据线	i have the cable
+接口不对	wrong port
+我借个电脑	borrow a laptop
+我充下电	charge it
+没电关机	it died from low battery
+我存一下	save
+未保存	not saved
+我恢复上一版	back to the last version
+这个功能没有	no such feature
+我提个需求	file a request
+我查日志	check logs
+报错信息	the error message
+我复现一下	reproduce
+本地没问题	works locally
+我清缓存	clear cache
+重装试试	reinstall it
+我找技术支持	ask tech support
+工单提了	ticket filed
+多久能回复	how long for a reply
+这个我排查	investigate
+我先复现	confirm it first
+我静音了	i am muted
+我开麦	unmute
+画面卡了	video froze
+屏幕共享中	sharing screen
+我能看见	i can see it
+听不清	cannot hear well
+我先挂	drop off
+我发个日程	send an invite
+时间冲突	the time conflicts
+我调一下	reschedule
+分工清楚	roles clear
+我催一下	chase it
+卡在审批	stuck in approval
+我找领导签	get the manager to sign
+预算不够	over budget
+我走流程	go through the process
+报销单	the expense form
+发票要原件	original receipt
+我贴好票	pasted the receipts
+打款到卡	pay to the card
+我不舒服	i feel sick
+发烧了	fever
+嗓子疼	sore throat
+肚子疼	stomachache
+我量个体温	take my temperature
+三十八度五	38.5 degrees
+我吃点药	take medicine
+饭后吃药	after meals
+一天三次	three times a day
+起疹子了	a rash
+我要挂号	i need to book a clinic visit
+专家号没了	no specialist slot
+我排队等	queue
+几点叫号	when is my turn
+我要验血	i need a blood test
+结果出来了	results are out
+没什么大事	nothing serious
+我开点药	get a prescription
+我输液	i am on a drip
+住院要押金	deposit for admission
+我办出院	leave the hospital
+我请人照顾	need a caretaker
+我好多了	much better
+还没完全好	not fully well
+我复查	go for a checkup
+我牙疼	toothache
+约了洗牙	booked a cleaning
+我眼睛累	eyes are tired
+我戴眼镜	i wear glasses
+我脖子僵	neck is stiff
+我腰疼	back hurts
+我受伤了	i got hurt
+冰敷一下	ice it
+我揉一揉	rub it
+我睡够了	slept enough
+我熬夜了	stayed up late
+我要补觉	i need to catch up on sleep
+我闹钟没响	my alarm did not ring
+今天降温	temperature drops
+明天下雨	rain tomorrow
+要带伞	bring an umbrella
+风很大	very windy
+今天很晒	sunny today
+我涂防晒	put on sunscreen
+要下雪	snow coming
+天要黑了	getting dark
+空气差	bad air
+我戴口罩	i wear a mask
+湿度太低	too dry
+我开加湿器	run the humidifier
+这周有空吗	free this week
+下周再说	next week
+时间过得快	time flies
+已经月底	end of the month
+我记个日子	mark the date
+改时间	change the time
+提前十分钟	ten minutes early
+我晚点到	arrive a bit late
+真可惜	what a pity
+我紧张	nervous
+我放心了	relieved
+我生气了	i am angry
+我谢谢你	thank you
+帮大忙	a big help
+你辛苦了	thanks for your hard work
+祝好	all the best
+我家里有事	family matter
+我接孩子	pick up the kids
+孩子写作业	kid is doing homework
+我辅导他	tutor him
+他考试	kid has an exam
+成绩下滑	grades dropped
+老师找我	teacher wants me
+我开家长会	parent meeting
+孩子发烧	kid has fever
+我带他看病	take him to the doctor
+我哄他睡	get him to sleep
+家里没人	no one is home
+我喂猫	feed the cat
+狗要遛	dog needs a walk
+我买菜回来	back from shopping
+爸妈身体好	parents are fine
+我带爸妈体检	book a checkup
+我爸住院	dad is in hospital
+我陪护	stay with him
+家里来客人	guests coming
+我打扫一下	clean
+我擦桌子	wipe the table
+我要拖地	need to mop the floor
+垃圾我扔	take out trash
+衣服晒了	laundry is out
+我收衣服	bring it in
+洗衣机在转	machine is running
+水电费交了	paid the bills
+网费到期	internet due
+我换个保洁	get a cleaner
+我订个房	book a room
+几点入住	what time is check in
+我晚到	arrive late
+能加床	extra bed
+有早餐	breakfast included
+我退房	check out
+行李寄存	store luggage
+房间没热水	no hot water
+我换房间	change rooms
+附近有好吃的	food nearby
+我买张票	get a ticket
+几点发车	when does it leave
+我在车上	on the bus
+到了发消息	text when i arrive
+这里能进吗	can we enter
+我预约了	i booked
+导游在哪	where is the guide
+我看看地图	check the map
+上门时间已经约定	home visit time is set
+东西归位	everything back in place
+云端空间不够	cloud storage is full
+交付时间已经锁定	delivery date is locked
+交警让我靠边停车	the officer asked me to pull over
+今晚早点睡	sleep early tonight
+付款流程正在审批	payment is in approval
+优惠折扣已经使用	coupon is applied
+会议纪要已经发出	minutes are sent
+作业已经检查	homework is checked
+倒车影像不清楚	the backup camera is unclear
+候补排队已经成功	waitlist succeeded
+停车场位置太远	lot is too far away
+停车场出口拥堵	lot exit is jammed
+停车场没有车位	the lot has no spaces
+充电速度非常缓慢	charging is very slow
+公交临时改线	the bus route changed temporarily
+出差申请还在审核	trip request is in review
+前面车辆缓行	vehicles ahead move slowly
+前面隧道限速八十	the tunnel ahead is limited to eighty
+功能缺陷已经修复	bug is fixed
+加班申请已经通过	overtime request approved
+包裹位置已经更新	parcel location updated
+午休时间已经到	lunch break is here
+卫生间漏水严重	bathroom leaks badly
+双重验证已经开启	two factor is enabled
+发票信息填写错误	invoice details are wrong
+发货时间预计明天	shipping expected tomorrow
+叫醒服务已经预约	morning call is booked
+台风路径已经转向	typhoon has turned
+合同条款需要修改	contract terms need edits
+合同要看条款	read the terms carefully
+周末计划已经取消	weekend plan is off
+售后电话一直占线	hotline is always busy
+售后电话在这	the service hotline is here
+备份任务已经失败	backup job failed
+外卖订单已经取消	takeout order is cancelled
+夜宵已经点好	late snack is ordered
+大家提前看看	please look beforehand
+天气预警已经发布	weather alert is issued
+存储空间需要清理	storage needs cleaning
+存档保留三年	keep the archive three years
+安装服务已经预约	installation is booked
+定位服务已经关闭	location service is off
+审核还要三天	review needs three more days
+客户反馈已经收到	customer feedback received
+家庭群消息太多	too many family chats
+家政保洁每周一次	cleaning weekly
+对方已经看到了	the other side already saw it
+导航提示前方施工	navigation says road work ahead
+小区门禁坏了	the gate access is broken
+屏幕亮度自动调节	brightness auto adjusts
+应用闪退无法打开	app crashes on launch
+座椅加热开着	seat warmer is on
+录音文件已经保存	recording is saved
+快递包裹已经签收	parcel is signed for
+我下次再来保养	come back for service
+我们继续合作	let us keep working together
+我先换个机油	change the oil first
+我先重启服务	restart the service first
+我发给他	send it to him
+我发给大家确认	send it to everyone to confirm
+我在人工窗口排队	i am queuing at the staff window
+我在加油站等你	wait at the gas station
+我在后座睡着了	i fell asleep in the back seat
+我在应用商店更新	i update in the store
+我在收费站排队	i am queuing at the toll gate
+我在终点站等你	wait at the terminal
+我在门口下车	get off at the door
+我换一对新的	replace with a new pair
+我点同意就行	just tap agree
+我用指纹登录	i log in with fingerprint
+我等着确认	wait for the confirmation
+我要重新申请	i need to apply again
+我连商场免费网络	join the mall free network
+报名已经截止	registration has closed
+截止时间是周五	deadline is friday
+房间类型已经升级	room is upgraded
+抄送项目经理	copy the project manager
+投影仪灯泡坏了	projector lamp is broken
+报销单据已经提交	claim has been submitted
+拐杖已经买到	cane is bought
+指纹识别非常灵敏	fingerprint is very quick
+挡住别人不好	it is bad to block others
+换货流程已经启动	exchange is started
+接口文档在哪	where is the api doc
+接口类型不一样	it is a different connector
+数字对不上	numbers do not match
+数据库连接超时	database connection timed out
+文件损坏无法读取	file is corrupt
+方向有点跑偏	the steering pulls to one side
+无线网络密码错了	wifi password is wrong
+日志记录已经清空	logs were cleared
+日程安排临时冲突	schedule clash
+早餐供应已经七点	breakfast from seven
+时差影响非常明显	jet lag is heavy
+晚饭安排六点半	dinner at six thirty
+景点门票已经购买	tickets are bought
+暖气温度不够	heating is not warm
+暴雨红色预警	rainstorm red warning
+服务器需要重启维护	server needs a restart
+机票价格已经上涨	flight price went up
+枕头需要更换	pillows need change
+校服需要清洗	uniform needs washing
+气温下降非常明显	temperature dropped a lot
+没事下次注意	it is fine, be careful next time
+浏览器需要更新	the browser needs updating
+游览路线已经更改	route has changed
+灯泡已经烧坏	bulb is burned out
+热水器不出热水	water heater no hot
+版本发布已经取消	release was cancelled
+物流信息一直没有	update shows nothing
+猫粮需要补货	cat food restock
+现金已经兑换	cash exchanged
+电子发票已经发送	e-invoice was sent
+电梯一直维修	the elevator is under repair
+电池健康明显下降	battery health dropped
+电脑风扇声音很大	fan is very loud
+电路需要检修	wiring needs check
+画面没有信号	no signal on the screen
+相册占用太多	the album takes too much
+睡眠时间严重不足	sleep is way short
+短信验证码已经输入	sms code is entered
+硬盘空间严重不足	disk space is critically low
+移动数据已经关闭	mobile data is off
+签字扫描存档	scan and archive
+系统提示内存不足	it says low memory
+系统正在自动更新	system is auto updating
+系统版本已经最新	system is up to date
+紫外线强度很高	strong uv today
+纱窗已经破损	screen is torn
+线头接触不良	the connector is loose
+结账金额已经核对	bill is checked
+维修进度已经更新	repair progress updated
+缓存占用太多空间	cache takes too much
+网络延迟非常严重	network lag is serious
+老板明天要	the boss wants it tomorrow
+航班状态已经延误	flight is delayed
+药品已经服用	medicine taken
+蓝牙设备已经配对	bluetooth device is paired
+行李箱轮子坏了	suitcase wheel broke
+行程安排非常紧凑	schedule is very tight
+衣柜空间不足	closet is too small
+解决方案正在讨论	solution is under discussion
+订单状态已经变更	order status changed
+议程三项内容	three items on the agenda
+记录就是证据	records are evidence
+设备配对失败	pairing failed
+调休安排已经确定	comp time is set
+责任分工已经明确	ownership is clear
+账号密码已经重置	password is reset
+质量问题已经反馈	quality issue is reported
+路口信号灯故障	the crossing signal is broken
+路面结冰非常危险	black ice is dangerous
+身份证已经过期	the id card expired
+车辆保养已经到期	car service is due
+轮胎气压需要补充	tire pressure needs air
+软件许可已经到期	the license expired
+这个事故不大	it is a minor accident
+这个字段含义不明	this field is unclear
+这个文件谁要	who wants this file
+这个流程要走两次	this process runs twice
+这个路口容易违章	this crossing is easy to violate
+这条路单向通行	one way traffic only
+退款申请已经提交	refund is submitted
+通话记录已经删除	call log is deleted
+配件价格已经确认	parts price is confirmed
+配送时间无法选择	delivery slot is unavailable
+酒店预订已经确认	hotel booking is confirmed
+销毁要有记录	destruction needs a record
+键盘按键没有反应	no response from keys
+问题清单已经整理	issue list is ready
+闹钟已经关掉	alarm is off
+隐私政策已经同意	privacy policy accepted
+带上雨伞了	umbrella brought along
+雷阵雨随时会来	thunderstorm may hit
+雾霾天气需要口罩	haze needs a mask
+面部解锁一直失败	face unlock keeps failing
+音频设备没有输出	no audio output
+项目进度已经延期	project is delayed
+预约时间已经确定	booking time is fixed
+预计明天回复	reply expected tomorrow
+风力太大航班取消	winds grounded the flight
+餐厅位置已经预订	table is reserved
+马桶需要疏通	toilet needs clearing
+驱动程序需要安装	driver needs installing
+验收标准已经确认	acceptance is confirmed
+高速收费站排队	toll gate is queuing
+麦克风声音太小	mic volume is low
+鼠标指针不停抖动	the cursor keeps jittering
+下次保养是五千公里	next service in five thousand kilometers
+停车场入口在前面右转	parking entrance turns right ahead
+前面事故占用两车道	an accident blocks two lanes
+前面路口左转再直行	turn left at the crossing then go straight
+导航路线已重新计算	route recalculated
+我在高速上信号不好	signal is poor on the highway
+这张交通卡余额不足	this transit card balance is too low
+需求评审安排在周四	review is on thursday
+下一站要不要换乘	do we transfer next stop
+临时账号会过期	temporary accounts expire
+主干道车流太大	the main road traffic is too heavy
+二维码扫一下就行	just scan the code
+体检报告要带上	bring the medical report
+保存位置选这里	pick this save location
+保险理赔要照片	claims need photos
+修理厂报价有点贵	the repair quote is expensive
+停车位费用太高	parking fee is too high
+儿童退烧药备用	kids fever medicine ready
+充电宝已经充满	power bank is fully charged
+公交路线已调整	bus route is changed
+共享单车没电了	the shared bike is out of power
+共享单车骑不了	shared bikes are not working
+其他垃圾放灰色	grey bin for other waste
+出口在电梯左边	the exit is left of the elevator
+刹车片厚度不够	the brake pads are too thin
+刹车片需要更换	brake pads need replacing
+前面有个减速带	speed bump ahead
+前面有交警指挥	there is an officer directing traffic
+前面有测速拍照	speed camera ahead
+医保结算已完成	insurance settled
+原件放在文件袋	keep originals in the folder
+厨房下水比较慢	kitchen drain is slow
+发动机故障灯亮了	the engine warning light is on
+师傅在路口等我	the driver waits at the crossing
+后面有车按喇叭	a car behind is honking
+四轮定位要做吗	do i need alignment
+备份要测试恢复	test the restore of backups
+备用钥匙在物业	spare key at office
+大概还有半小时到	arrive in about half an hour
+天气变化已关注	watching the weather
+孩子睡眠要保证	kids need sleep
+定位漂移得厉害	the location keeps drifting
+宠物疫苗已打完	pet shots are done
+家政阿姨已预约	cleaner is booked
+家里网络已恢复	home network is back
+宽带到期要续费	broadband renewal
+密码策略很严格	the password policy is strict
+屏幕时间要控制	limit screen time
+工作日时间很紧张	weekdays are tight
+工资条今天已经到	payslip arrived today
+左边耳朵没声音	no sound in the left ear
+师傅说要等配件	the mechanic says parts are on order
+快递柜超时收费	locker overage fee
+恢复一次要多久	how long a restore takes
+我下高速去问路	leave the highway to ask directions
+我买一根转接头	buy an adapter
+我们私了更省事	settling privately is easier
+我先把初稿完成	finish the first draft
+我先把材料准备	prepare the materials
+我先把行李寄存	leave the luggage in storage
+我先把这份读完	finish reading this one
+我先用临时账号	use a temporary account
+我删掉一些照片	delete some photos
+我加上关键词标签	add keyword tags
+我加上日期后缀	add a date suffix
+我去餐车买点东西	i am going to the dining car
+我在天桥下面等	wait under the footbridge
+我在应急车道停	i stopped on the emergency lane
+我在换乘站等你	wait at the transfer station
+我在无线网络下更新	update on wifi
+我在辅路上行驶	i am on the side road
+我堵车可能要迟到	traffic jam, i may be late
+我手动输入一遍	type it manually
+我手机导航没电了	my phone navigation is out of battery
+我打过一次没人接	i called once with no answer
+我换一支马克笔	change the marker
+我换一条高清线	swap the hdmi cable
+我换到备用轮胎	i switched to the spare tire
+我提前发个公告	post a notice early
+我撤回刚才那条	recall that message
+我改成标准格式	switch to a standard format
+我确认一下含义	confirm the meaning
+我要加特殊字符	i must add special characters
+我记录待办事项	note the action items
+我过滤一下关键词	filter by keyword
+我重新发送一次	resend it
+我重新校准一下	recalibrate it
+我重新说明一下	explain again
+我重新配对一次	pair again
+打车发票开好了	the ride receipt is issued
+打车排队四十分钟	ride hailing queue is forty minutes
+托运手续在哪办	where is the check in counter
+投影仪需要转接头	the projector needs an adapter
+护照签证都在办	passport and visa in process
+报价单已经发出	quote has been sent
+拍照位置非常好看	this spot photographs well
+换乘通道已关闭	transfer path is closed
+换乘通道要刷卡	the transfer gate needs a card
+接送时间已调整	pickup time adjusted
+摄像头权限被拒绝	camera access denied
+收纳箱已经买好	storage bins arrived
+数据线接口松动	cable connector is loose
+文件名有中文不行	chinese file names fail
+早餐营养要均衡	balanced breakfast
+时区已自动调整	timezone auto set
+昼夜温差比较大	big day night swing
+景区广播在找人	park is calling someone
+景点开放已确认	park hours confirmed
+有告警立刻处理	handle alarms immediately
+测试环境要数据	the test env needs data
+牙科预约在周五	dentist on friday
+物业费需要缴纳	pay the management fee
+疫苗本已经带上	vaccine book is with me
+登机口已经变更	gate has changed
+移动电源已充满	power bank charged
+第一阶段先上线	phase one ships first
+签字在这里按这里	sign here and press here
+纪要谁负责记录	who is taking the minutes
+维修师傅已上门	repairman came
+维护在凌晨进行	maintenance runs at dawn
+网络已开通漫游	roaming is on
+老人体检已安排	elders checkup set
+自动售票机故障	the ticket machine is broken
+蓝牙耳机连不上	bluetooth will not connect
+行李托运已完成	luggage is checked in
+行李限额已确认	baggage limit confirmed
+记录仪时间不对	the dash cam clock is wrong
+评审安排在下周	review is next week
+责任认定还没出	the liability decision is not out yet
+路线变更已收到	route change received
+车胎好像漏气了	the tire seems flat
+车载蓝牙已连接	car bluetooth is connected
+还是不行就返修	if it still fails i will return it
+这个出口通商场	the exit leads to the mall
+这个功能要授权	this feature needs permission
+这个报价我接受	this quote is acceptable to me
+这个方案要评审	this plan needs review
+这个油耗算正常	this fuel use seems normal
+这个箱子超重了	this suitcase is overweight
+这个表格怎么填	how do i fill this form
+这个软件要更新	this app needs an update
+这个配件要等货	this part is on backorder
+这个链接过期了	this link expired
+这个页面打不开	this page will not load
+这张票不能改签	this ticket cannot be changed
+这条路走到头就是	walk to the end and you are there
+这样比较省时间	it saves time this way
+这段路没有路灯	this stretch has no street lights
+这段路限速六十	this stretch is limited to sixty
+这趟车终点在哪	where is the final station
+这附近停车很难	parking is hard around here
+退款金额已经到账	refund has arrived
+通知栏消息太多	too many notifications
+遛狗时间已固定	dog walk time set
+邻居装修噪音大	neighbor renovation noise
+配件到了通知我	ping me when parts arrive
+重启要通知别人	restarting needs notice
+防晒用品已备好	sunscreen ready
+附件太大传不上	attachment too large
+降雪道路已封闭	snow closed the road
+集合时间已确认	meet time confirmed
+风扇已经收起来	fan is stored away
+风险点已经标注	risks are marked
+验证码一直收不到	the code never arrives
+高铁晚点二十分钟	the high speed train is twenty minutes late
+人脸识别总失败	face recognition keeps failing
+代理人有权限	the deputy has the rights
+保险单已带上	insurance policy brought
+修改要申请	changes need a request
+分类要投放	sort the waste properly
+加湿器要加水	humidifier needs water
+地板有划痕	floor has scratches
+墙面有裂缝	there is a wall crack
+备份到云端	backup to the cloud
+天亮就交接	hand over at dawn
+工作量有点大	the effort is a bit large
+我下次早点来	come earlier next time
+我今晚加班赶	work late tonight
+我值班盯着	i am on duty watching
+我大概十分钟到	arrive in ten minutes
+我截图给你看	screenshot for you
+我打电话叫拖车	call for a tow truck
+我找不到入口	i cannot find the entry
+我找不到接口	i cannot find the port
+我找代理人签	ask the deputy to sign
+我换一辆车叫	request another car
+我新建一个	create a new one
+我明天精神好	be fresh tomorrow
+收到请回复	please reply when received
+旅行袋要清洗	duffel needs washing
+日志里能看到	visible in the logs
+日期不能改	dates cannot be changed
+明天继续谈	tomorrow we continue
+来源要标注	mark the sources
+标签别太多	do not over tag
+格式不支持	unsupported format
+档案要编号	number the archives
+正文别太多	keep the text brief
+申请通过了	the application passed
+疫苗接种已完成	vaccination done
+租车要押金	renting needs a deposit
+结论要可执行	conclusions must be actionable
+行李架放不下了	it will not fit on the rack
+话筒没有电	microphone has no battery
+责任人要签字	owners sign it
+超时要加钱	overdue time costs extra
+违约有赔偿	breach brings compensation
+邮件在垃圾箱	the mail is in spam
+项目经理在开会	the manager is in a meeting
+验证码收不到	i am not getting the code
+下周安排已经排满	next week is full
+今天限号开不了车	today my plate is restricted
+保修期限还剩一年	warranty has one year
+假期余额还剩五天	five days of leave left
+兴趣班在周六周末	club on weekends
+内循环换一下空气	switch to inner circulation
+前面排队还有十人	ten people ahead in the queue
+加油发票已经开好	fuel receipt is issued
+商品尺码不太合适	size does not quite fit
+地铁末班几点结束	what time does the last metro run
+地铁运营时间已延	metro runs longer
+导游集合点在门口	guide meets at the door
+我们走高速比较快	the highway is faster
+我先把刹车片检查	inspect the brake pads first
+我在检票口外面等	wait outside the gate
+我把地图放大看看	zoom into the map
+我把导航声音关掉	mute navigation voice
+我把数据备份一下	back up the data
+我把现场照片上传	upload the scene photos
+我把行程分享给你	share my trip with you
+我把退票手续办了	i completed the refund
+我把通行记录截图	screenshot the toll record
+我把问题清单给你	give you the issue list
+我重新搜一下地址	search the address again
+我预约了明早年检	i booked the vehicle check tomorrow morning
+排队号码还有十位	ten numbers ahead
+收货地址需要修改	address needs an edit
+无线投屏一直失败	casting keeps failing
+服务区前面两公里	service area two kilometers ahead
+梅雨季节衣服难干	rain season clothes stay wet
+洗衣服务已经送回	laundry is back
+流量套餐即将用完	data plan is nearly used up
+测试环境还没就绪	test env is not ready
+生鲜食品已经送达	fresh food has arrived
+电瓶没电打不着火	the battery is dead and will not start
+界面显示不太正常	the display looks odd
+空气质量指数偏高	air quality is high
+视频通话信号卡顿	video call keeps freezing
+车票余票非常紧张	tickets are scarce
+过路费一共八十块	the toll is eighty yuan in total
+这个司机开车很稳	this driver drives smoothly
+这个报错重复出现	this error keeps repeating
+这车启动有点困难	this car is hard to start
+这里巷子太多太绕	too many twisting alleys here
+邮箱附件太大超限	mail attachment too large
+酒店入住时间已到	check in time is here
+餐品口味非常合适	taste is just right
+驿站营业时间已改	station hours changed
+高速出口提前并线	merge early for the highway exit
+三年后要销毁	destroy after three years
+下一个出口更绕	the next exit is a longer way
+仪表盘指示灯亮	dashboard light is on
+会后跟踪落实	follow up after the meeting
+住院手续已办	admission done
+体检项目已选	checkup items set
+保修期内免费	inside the warranty it is free
+倒计时还剩三天	three days left
+充电器忘在办公室	left the charger at the office
+公告写清影响	describe the impact clearly
+出口堵着一辆车	an car is blocking the exit
+分工要写明白	write the split clearly
+初稿不用太细	the draft need not be detailed
+刹车有点异响	the brakes make a strange noise
+发动机异响明显	engine noise is obvious
+可回收放蓝色	blue bin for recyclables
+地漏返味明显	drain smells back
+场景覆盖要全	cover scenarios fully
+声音从电脑出	sound comes from the computer
+备用电池已带	spare batteries brought
+复诊时间已约	follow up booked
+大厅里人很多	the hall is crowded
+天气预报说会转晴	forecast says it clears
+审批人出差了	the approver is on a trip
+审批还没通过	approval is still pending
+密送别人看不见	blind copy stays hidden
+导游电话已存	guide number saved
+工单已经提交	the ticket is submitted
+常用药品已装	pills packed
+广播叫到我的号	the call shows my number
+床垫有点太硬	mattress is too firm
+座位偏好已选	seat preference set
+我们改到下午	let us move to the afternoon
+我先估个工作量	estimate the effort
+我先把电充满	charge it fully first
+我到了给你打电话	call you when i arrive
+我在休息区等	wait in the rest area
+我在停车场找车	i am looking for my car in the lot
+我在站台上看着车来	i am watching the train arrive
+我在路边等车	i am waiting by the road
+我坐反方向了	i boarded the wrong direction
+我复印件存一份	keep one copy
+我在站台等你	i am waiting on the platform
+公交还有六站	the bus is six stops away
+我在路口等红灯	i am waiting at the red light
+这条路单行	this road is one way
+前方施工绕行	road work ahead, take a detour
+轮胎气压不足	the tire pressure is low
+我打一辆车回家	i take a taxi home
+车费可以报销吗	is the fare reimbursable
+到站我提醒你	i will remind you at our stop
+食堂今天关门	the canteen is closed today
+外卖放在前台	leave the delivery at the front desk
+我中午不喝酒	i do not drink at noon
+快递今天能到吗	will the package arrive today
+这个要退货	i need to return this item
+文档没有保存	the document was not saved
+数据要备份的	remember to back up the data
+系统今早崩了	the system crashed this morning
+进度今天过半	progress is halfway today
+我扫一下二维码	i scan the QR code
+密码要换新的	the password needs changing
+我今天要挂号	i need a clinic appointment today
+我发烧到三十八	my fever is thirty eight degrees
+嗓子有点疼	my throat hurts a bit
+我在医院等结果	i wait for results at the hospital
+医生说明天再来	the doctor said come back tomorrow
+轮椅在门口	the wheelchair is at the door
+输液还有两瓶	two more bottles of IV
+我有点低血糖	i have low blood sugar
+挂号要带身份证	bring your id to register
+明天气温下降	the temperature drops tomorrow
+午后有雷阵雨	thunderstorms in the afternoon
+今晚要降温	it will cool down tonight
+明天是周六	tomorrow is saturday
+我迟到十分钟	i am ten minutes late
+傍晚天气最好	the weather is nicest at dusk
+这周忙完了	i am done for the week
+周末我在家	i stay home on weekends
+真不好意思打扰	sorry to bother you
+太感谢你了	thank you so much
+辛苦大家了	thanks for everyone's hard work
+我马上到	i will be there shortly
+这次是我疏忽	it was my oversight this time
+别客气应该的	no worries, happy to help
+我这边没问题	i am fine on my end
+多谢提醒	thanks for the reminder
+抱歉我来晚了	sorry for keeping you waiting
+我完全同意	i fully agree
+孩子放学我去接	i will pick the kid up after school
+作业还没写完	homework is not done yet
+老人在家休息	my parents are resting at home
+我带父母体检	i take my parents for a checkup
+我把门反锁了	i locked the door behind us
+孩子睡着了	the kid is asleep
+明天要早起	we get up early tomorrow
+我陪他去医院	i go to the hospital with him
+前台可以寄存吗	can the front desk store bags
+房间少一床被	we are short one blanket
+酒店有停车场吗	does the hotel have parking
+景区需要预约	the scenic area needs booking
+门票已经买好	we already have the tickets
+我丢了一张票	i lost one ticket
+机场大巴几点	what time is the airport bus
+我在免税店等	i wait at the duty free

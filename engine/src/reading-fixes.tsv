@@ -1,0 +1,30 @@
+# C1 方案 C：随包词库的读音修正表（加行，不删行）
+#
+# 列格式与青简词库一致：词头<TAB>空格分隔的音节（无声调）<TAB>词频；`#` 行与空行由
+# `qingjian_dictionary::Dictionary::parse` 跳过（crates/qingjian-dictionary/src/dictionary/mod.rs:94）。
+# 本表用 include_str! 烘进 `libmsime_android.so`，在 `create_engine` 里经
+# `Engine::set_extra_dictionaries` 挂上（crates/qingjian-core/src/engine/setup.rs:495），
+# 查词时与主词库并集（同文件 :505 all_dictionaries）。**随包 dict.tsv 本体一字不改。**
+#
+# 为什么需要它：`qingjian/assets/lexicon/phrases.tsv` 里的短语读音是「按成分词最高频的读音拼出来」的
+# （tools/dict-convert/src/phrases/mod.rs:231 的文档注释 + :247-253 的实现），
+# 于是 `长`（zhang 130,456 > chang 81,856）把一批该读 chang 的短语带偏。逐条判定与规模见
+# `third-party/PIN.md`「C1 词典自带错读音」一节。
+#
+# 词频沿用 `dict.tsv` 里同一个词头那条错读音行的频次（同词同用量，不新造数字）；
+# 由 `assemble.rs` 的 `reading_fixes_match_the_shipped_dictionary` 逐条对盘，我抄错就红。
+# 只收「词义可证的读音」，与上游水杉的 pinyin-reading-corrections.txt 同一政策；
+# 两读皆可的条目（长的 / 不着）按「两行都留」处理：这里加的是原表没有的那一读，原行不动。
+
+长时间	chang shi jian	7429
+太长	tai chang	3729
+很长	hen chang	5128
+好长	hao chang	5120
+不长	bu chang	4232
+这么长	zhe me chang	4074
+那么长	na me chang	2498
+头发长	tou fa chang	3234
+多长	duo chang	3020
+睡不着	shui bu zhao	343
+长的	chang de	22404
+不着	bu zhao	33675

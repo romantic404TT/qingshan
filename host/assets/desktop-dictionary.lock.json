@@ -1,0 +1,12 @@
+{
+  "artifacts": [
+    {
+      "name": "dict.tsv",
+      "bytes": 2053612
+    },
+    {
+      "name": "glossary-en.tsv",
+      "bytes": 2192288
+    }
+  ]
+}

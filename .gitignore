@@ -1,0 +1,26 @@
+# Gradle
+host/gradle-app/.gradle/
+host/gradle-app/build/
+host/gradle-app/app/build/
+host/gradle-app/local.properties
+*.hprof
+.cxx/
+
+# Rust：cargo-ndk 产物与构建目录（上游对应 platforms/android/build-native.sh）
+engine/jniLibs/**/*.so
+engine/target/
+
+# 从上游取回的产品数据（体积大，不入库）
+host/assets/dictionary/*.tsv
+host/assets/dictionary/*.qj
+
+# 发布密钥与口令：私钥永远不入库，也不属于 GPL 的「对应源码」（见 NOTICE.md §5）。
+# 本机放在仓库外的 D:\toolchains\keys\，这里只是防手滑往仓库里拷。
+*.p12
+*.keystore
+*.jks
+*.password
+
+# Python 工具的字节码（`engine/tools/__pycache__/` 实测生成过，不该入库）
+__pycache__/
+*.pyc

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- 只随 debug 包合并进来（本文件在 src/debug/，release 变体看不到）：验证「密码框不建会话」这条隐私硬门。
+             exported 必须是 true：实测 `exported=false` 时 adb（uid 2000）拉起被拒
+             `SecurityException: Permission Denial … not exported from uid 10691`，
+             debuggable 也不放行（见 PIN 环境陷阱）。它没有 intent-filter，只能被显式组件名拉起。 -->
+        <activity
+            android:name="app.msime.android.TestPasswordActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar"
+            android:windowSoftInputMode="adjustResize|stateVisible" />
+    </application>
+</manifest>
