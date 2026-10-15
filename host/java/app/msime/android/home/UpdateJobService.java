@@ -42,6 +42,16 @@ public final class UpdateJobService extends JobService {
     static final String NOTIFICATION_CHANNEL = "msime_updates";
     static final int NOTIFICATION_ID = 0x6d730402;
     private static final String PLAY_STORE = "com.android.vending";
+    /**
+     * 青杉的破例（宿主 Java 树第 3 处，理由见 README 已知失效项第 11 条与 NOTICE §5a 第 7 条）：
+     * 本包的更新入口整体关掉。{@link UpdateApi} 的三个地址写死水杉的发行版
+     * （msime.app 列表 + metasequoiaime/msime 的下载页），装了我们的包去点会「提示有新版 →
+     * 下几十 MB → 被包名/证书核对挡掉」。借 Play 那道现成的门把它关掉，一次带走三处消费：
+     * 关于页的「检查更新」药丸、「自动更新」与「更新通道」两行、以及每天一次的后台任务。
+     * 不改 UpdateApi 的地址常量，也不删 Play 来源判定 —— 将来接上青杉自己的发布物时，
+     * 把这个开关翻成 false 就恢复原行为。
+     */
+    private static final boolean IN_APP_UPDATES_DISABLED = true;
     private static final String APK_TYPE = "application/vnd.android.package-archive";
 
     private volatile Thread worker;
@@ -121,7 +131,7 @@ public final class UpdateJobService extends JobService {
     /** 安装来源是 Google Play 时为真；读不出来源时按不是 Play 处理。 */
     @SuppressWarnings("deprecation")
     static boolean installedFromPlay(Context context) {
-        return PLAY_STORE.equals(installer(context));
+        return IN_APP_UPDATES_DISABLED || PLAY_STORE.equals(installer(context));
     }
 
     @SuppressWarnings("deprecation")

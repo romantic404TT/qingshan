@@ -2910,6 +2910,56 @@ release 内 859,681 B）。**当前装机状态：release 0.2.0**（要回到可
 所以"87.5% vs 20%"是跨状态比较；而"0/40 进第 1 格 vs 33/40"这组不受影响——多几条边不会把对照组
 推进第 1 格，真推进了日志里会显出位次 0。
 
+### GPL 方案 B 落地：本地建仓 + 首次提交 + 更新入口关掉（2026-10-15 21:27–21:55）
+
+**公开地址仍是占位**：用户选了"稍后自己填"，所以 `NOTICE.md` §5 与 `README.md`「构建前提」里
+青杉自己的地址写的是 **`https://github.com/<待填>/<仓库名>.git`，并标了「⚠ 待填」**——
+这不是一个值，push 之前 §5 那套"从哪取"的承诺都不生效。**两个上游的地址是查出来的、不是猜的**：
+青简 = 本地那份 `git remote -v` 的 origin `https://github.com/romantic404TT/qingjian.git`
+（HEAD `4a3e963d…`）；水杉 = 其 `README.md:8` 的「GitHub 仓库」链接
+`https://github.com/metasequoiaime/msime`（本地那份无 `.git`，固定依据仍是 zip 的
+MD5 `cfdab2624a8e6469b588984477f1ed65` / 29,461,249 B）。
+
+**提交前的安全核查（五条，逐条有输出）**：① `.gitignore` 的 14 条模式逐条 `grep` 到；
+② 仓内 `find *.p12|*.keystore|*.jks|*.password` **0 命中**；③ 暂存清单里
+`build/`、`.gradle/`、`engine/target`、`jniLibs/*.so`、`*.apk`、`*.idsig`、快照目录 **0 命中**
+（`grep_rc=1`）；④ 秘密扫描（`storepass <值>` / `pass:<6+位>` / `PRIVATE KEY` / `ghp_` / `xox…`）
+只命中两处**文档里的占位示例**（`PIN.md` 的 `-storepass A -keypass B` 与 `-storepass <口令>`）；
+⑤ `host/scripts/sign-apk.sh` 不含口令，只从 `QINGSHAN_RELEASE_KEYSTORE_PASSWORD`
+或 `<密钥库>.password` 首行读。
+
+**抓到两个必须写下来的东西**：
+1. **`engine/tools/__pycache__/verify_symbols.cpython-38.pyc` 被 `git add -A` 收了进来**——
+   `.gitignore` 里没有 `__pycache__/`。已补两条模式（`__pycache__/`、`*.pyc`）并
+   `git rm -r --cached` 重暂存，复查 `grep -c "pycache\|\.pyc"` = **0**，暂存数 580 → **579**。
+   下次加新工具的缓存目录（`.pytest_cache/`、`.mypy_cache/`）要一起补。
+2. **这台机器 `core.autocrlf=true`**，会把 `host/scripts/sign-apk.sh` 检出成 CRLF ⇒
+   Git Bash 里 `bash sign-apk.sh` 因 `\r` 报错。新增 `.gitattributes`（`* text=auto` +
+   `*.sh eol=lf` + `*.bat eol=crlf` + 按类型钉 LF + png/jar/so 标 binary），
+   `git check-attr eol -- host/scripts/sign-apk.sh` 现回 **`lf`**。
+   顺带量了工作树里真带 CRLF 的文本文件只有 **5 个**（`LICENSE-QINGJIAN`、
+   `engine/src/keys.rs`/`logcat.rs`/`view.rs`、`host/assets/desktop-dictionary.lock.json`），
+   **`host/java` 一个都没有** ⇒ 「Java 树逐字未改」这条不受归一化影响。
+   但锁文件是 python `write_text` 在 Windows 上生成的，实测 167 B 里含 **12 个 CR** ⇒
+   **LF 形式是 155 B**，所以文档里"锁 167 B"是**本机（Windows）形式**，
+   Linux 上重建会得到 155 B、`.so` 也随之差 12 B。这条以前没人记过。
+
+**两个提交**：
+- `db5ad5a` `Initial commit: Qingshan IME (阶段一 + 阶段二 A/B/C + 纠错闭环 + 签名链)`
+  ⇒ **579 files changed, 92,024 insertions(+)**；作者
+  `romantic404TT <2721890995@qq.com>` —— 用的是这台机器**已有的全局 config，我没改任何 git 配置**。
+  分布：`host/java` 394、`host/res` 145、`host/gradle-app` 10、`engine/src` 10、`engine/tools` 8、
+  文档与许可 5、`host/scripts` 1、`host/assets` 1（只有锁）。
+- 第二个提交：`UpdateJobService.java` 的更新入口开关（**11 增 1 删，宿主 Java 树第 3 处破例**）。
+  形式上没照原话写 `return true`，而是 `IN_APP_UPDATES_DISABLED || 原判定` + 8 行注释块：
+  直接 `return true` 会让 `installer()` 与 `PLAY_STORE` 变成死代码，而翻开关是一行回退
+  （按"可逆优先于删除"那条既有裁定）。编译实测 `compileDebugJavaWithJavac` 退出码 0；
+  **本轮没重打 APK**（APK mtime 仍 18:09:20）⇒ "药丸确实不显示"**未真机验**。
+
+**push 由用户执行**（agent 不接触任何凭据）：
+`git remote add origin <URL>` + `git push -u origin main`，URL 填好后把
+`NOTICE.md` §5 与 `README.md`「构建前提」里那两处「⚠ 待填」一起换掉。
+
 ### 签名链与发布准备评估（2026-10-15 02:51–03:20，本轮主任务，**只评估与设计，没出 release 包**）
 
 对应待办第 17 条的 ①②③④ 四件，逐件给结论 + 证据。本轮**没生成过 release 变体的 APK**、
@@ -3374,12 +3424,27 @@ Java 能成立的原因。`helpcodes/` 与日文那一组（`Bootstrap.java:246-
     三条方案（B 推荐 / A 只进 `dict.tsv` / C LFS 不推荐）与代价、条款原文都在
     「GPL 源码分发完整性评估」一节。**拍板后要做的**：建公开仓（用户侧决定何时、放哪个账号）、
     改 `NOTICE.md` §5 与 `README.md` 构建前提、顺手修那三处过期数字（词库字节数 / 锁 52 B / 86 桩）。
+    **（现值 2026-10-15 21:55：方案 B 已落地 ⇒ 本条只剩「公开地址待填」一件事。**
+    上面那句「没改 `.gitignore`、没改 `NOTICE.md`」是上一轮的状态，本轮两处都改了：
+    `.gitignore` 只**加**了两条（`__pycache__/`、`*.pyc`，因为 `git add -A` 把字节码收进来了），
+    `host/assets/dictionary/*.tsv` 按 B 继续忽略；NOTICE §5 与 README「构建前提」按 B 改写，
+    三处过期数字已修（词库 2,192,288 B / 90,380 行 / 口径改成词库全量、锁 167 B、桩 85 个）。
+    `git init -b main` + 首次提交 `db5ad5a`（579 文件 / 92,024 行）已建，另加了 `.gitattributes`
+    （这台机器 `core.autocrlf=true` 会把 `sign-apk.sh` 检出成 CRLF）。
+    **待用户做**：建 GitHub 仓 → 换掉 NOTICE/README 里两处「⚠ 待填」→ 自己跑
+    `git remote add origin <URL>` + `git push -u origin main`（agent 不碰凭据）。**）
 20. **「检查更新」等用户拍三选一**（2026-10-15 读码完，**没改 Java**）。推荐 **b**：
     破例面实测 **1 个文件 1 行**（`UpdateJobService.java:123-125` 那个谓词恒真），
     一次关掉「检查更新」药丸 + 「自动更新」「更新通道」两行 + 每天一次的后台任务；
     且 `:92-94` 显示自动更新默认关 ⇒ 现状（方案 c）的危害只是"用户主动点一下白下一趟"。
     方案 a 要 5–6 处 + 一个 releases 列表端点 + 发布侧上传 `.sha256`，且依赖第 19 条先落地。
     **`local_mode` 不是这条路**（它是键盘视图状态，7 处读它，见该节）。
+    **（现值 2026-10-15 21:55：按 b 落地，本条结案。** 第二个提交改 `UpdateJobService.java`
+    （**11 增 1 删**，宿主 Java 树第 3 处破例），形式是命名开关 `IN_APP_UPDATES_DISABLED = true`
+    短路，不是上面说的「1 行恒真」——直接 `return true` 会让 `installer()` 与 `PLAY_STORE`
+    变死代码，翻开关回退才是一行（按「可逆优先于删除」那条既有裁定）。
+    `compileDebugJavaWithJavac` 退出码 0；**本轮未重打 APK ⇒ 真机未验**，
+    下一轮出包时到关于页确认那三样确实不显示了。**）
 21. **新发现，未定位：横屏下候选条整条不显示**（2026-10-15 20:35 撞见，见环境陷阱第 47 条）。
     现象：`mCurrentOrientation=90` 时试用页键位正常、会话活着、`input text nihao` 后
     **候选面板一个节点都没有**；锁回竖屏立刻恢复。本轮为了做预检直接锁屏绕过了，

@@ -72,7 +72,7 @@ README"——后者已在当天 18:19–18:20 出过并验过第一个发布包�
      只有 `EditorInfo.packageName`（宿主自己在 `:1233-1235` 的 `currentDocumentIdentifier`
      回到同一个框也会换新号，不能当键）。**不改任何交互、不加符号**（导出仍是 102 个，
      `engine/tools/verify_symbols.py` 双向差集为空），也不动 `stop()`/`destroy` 的调用时机。
-     Java 树其余 393 个文件逐字未改。
+     Java 树其余 393 个文件逐字未改（第 7 条另计一处，改后为 392 个）。
 2. 宿主树**未取**上游两个 Kotlin 插件文件
    （`java/app/msime/android/account/AccountPlugin.kt`、`java/app/msime/android/voice/VoicePlugin.kt`）。
    它们只被一处 javadoc `{@code}` 提及，不构成编译依赖；`java`+`res` 文件数 539 对上游 541。
@@ -93,6 +93,14 @@ README"——后者已在当天 18:19–18:20 出过并验过第一个发布包�
    release 变体既不编译也不合并清单（实测：release 包清单里 `TestPasswordActivity` 出现 0 次）。
    用途是验「密码框不建会话」这条隐私硬门（`README.md` 已知失效项第 4 条与 PIN「密码框路径 C」）。
    它不新增 native 符号（导出仍是 102 个），不改任何上游文件。
+7. `host/java/app/msime/android/home/UpdateJobService.java` 改了 **12 行（1 处，11 增 1 删）**——
+   宿主 Java 树的**第 3 处破例**（2026-10-15 用户拍板方案 b）：新增
+   `private static final boolean IN_APP_UPDATES_DISABLED = true;` 及其 8 行注释，并把
+   `installedFromPlay()` 改成 `return IN_APP_UPDATES_DISABLED || PLAY_STORE.equals(installer(context));`。
+   理由：`UpdateApi` 的三个地址写死水杉的发行版，我们的包点「检查更新」会白下一趟再被包名核对挡掉；
+   借 Play 那道现成的门关掉三处消费（关于页药丸、两行设置、每日后台任务）。
+   **没动 `UpdateApi.java`，也没删 Play 来源判定**（翻回 `false` 即恢复原行为）。
+   其余 392 个 Java 文件逐字未改。
 
 ## 随包数据
 

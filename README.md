@@ -235,7 +235,7 @@ W qingshan: [msime_android::wire] 回 ok:false: create_failed: 词库加载失�
 | `engine/tools/verify_symbols.py` | `NativeClient.java` 的 native 声明 ↔ 每个 `.so` 的动态导出，双向差集 | 102 对 102，两边都空 |
 | `engine/tools/verify_apk.py` | APK 里的 `.so`/词库/清单，符号从包里解压出来再数（不是查 `jniLibs`） | 全过，退出码 0 |
 | `engine/tools/scan_bridges.py` | 宿主每个 `NativeClient.` 调用点会不会**杀会话**（看 catch 体调不调 `fail()`/`stop()`）。`--summary` 只看计数，`--json` 供未来接 CI | 62 个调用点 = real 23 + 桩 39；桩里 **杀会话 5 / 降级 32 / 不解析 1 / 需人工定性 1**。阶段二每加一个真实现，杀会话数应当只降不升（阶段一收尾实测 12，2026-10-13 实测 5；中间各步的期望值写在脚本末尾的基线段里） |
-| `engine/tools/audit_citations.py` | 注释与文档里每条 `文件:行号` 是否还能落到真实行 | 373 条：OK 146 / AMBIG 120 / MISSING-PATH 94 / **LINE-OOB 0** / NOT-FOUND 13（2026-10-15 21:05 实测；本轮 368 → 373 的 +5 **全部落在 AMBIG**（OK / MISSING-PATH / NOT-FOUND 三项一条没动）——新引的宿主 Java 与 `LICENSE` 条款行里，那些在上游有逐字孪生的文件脚本只能报"存在多份"，属既有口径；**LINE-OOB 仍 0**。上一轮 368 条：OK 146 / AMBIG 115 / MISSING-PATH 94 / **LINE-OOB 0** / NOT-FOUND 13（19:47 实测，19:48 复跑同数；本轮 366 → 368 的 +2 落在 OK/AMBIG 各一条，**MISSING-PATH 与 NOT-FOUND 的明细一条没动**（与上一轮逐行比对：只有 `qingshan/host/java/app/msime/android/account/UpdateApi.java` 的 45 行、`.../home/AboutPage.java` 的 52 行、`qingshan/host/gradle-app/app/build.gradle.kts` 的 48 行 三条的**出处列表**多了 README，脚本按引用串去重所以计数不动）。新引的行号来自「密码框路径 C 真机验证」「A3 第 7 批落表」「签名链落地」三新节与 README 两条新 bullet。上一轮 366 条：OK 145 / AMBIG 114 / MISSING-PATH 94 / **LINE-OOB 0** / NOT-FOUND 13（2026-10-15 03:35 实测；本轮 354 → 366 的 +12 全来自「A3 第 7 批起草」「签名链与发布准备评估」两新节与 README 三条新 bullet 新引的上游/宿主行号，**OK 与 AMBIG 一条没动**，+12 全落 MISSING-PATH（83 → 94）：这批引用是 `msime-develop/platforms/android/scripts/signing.sh`、`msime-develop/.github/workflows/release-android.yml`、`qingshan/host/java/app/msime/android/account/UpdateApi.java` 这类带目录前缀的完整写法，脚本认的六个前缀里没有 `msime-develop/` 与 `qingshan/`，**属既有口径不是新问题**；NOT-FOUND 12 → 13 的那 1 条是 `env.sh:25`——`/d/toolchains/env.sh` 在扫描根之外，永远认不到，与 `jni-0.22.4`/`prd.md`/`AlertDialog.java` 那 12 条同类。**本轮一度把 LINE-OOB 引出 3 条**：新节里把 `NOTICE.md` 的 24 行、26–28 行与 `build.gradle.kts` 的 48 行**裸写**（不带目录前缀），被对到 msime-develop 的孪生文件（那儿那个 NOTICE.md 只有 5 行）——**本行末尾那条既有教训我又犯了一次**（那条教训本身写着"我又犯了一次"），补齐 `qingshan/` 前缀后当场归零；顺带把 `UpdateApi.java`、`AboutPage.java` 这类在上游有**逐字孪生**的引用改成完整路径（孪生行号目前恰好一致，但那是巧合不是保证，裸写等于赌两份文件永不分叉）。**补一条自指的坑**：本行刚写下"裸写 `NOTICE.md` 24 行会被对到孪生文件"这句话时，那句话里**照抄下来的三个"文件名+冒号+行号"裸引用自己被审计脚本当真了**，复跑一次立刻变 369 条 / LINE-OOB 3——改成"`NOTICE.md` 的 24 行"这种不被解析的写法才归零。**描述错行的句子本身不能沿用错行的写法。**上一轮 354 条：OK 145 / AMBIG 114 / MISSING-PATH 83 / **LINE-OOB 0** / NOT-FOUND 12（2026-10-15 02:40 实测；本轮 352 → 354 的 +2 来自「A3 第 6 批起草」新节与 README 那条新 bullet；起草用的离线判据脚本在 `/d/toolchains/tmp/` 下、不在扫描根里，故不产引用（临时脚本不进仓是刻意的）。上一轮 352 条：OK 144 / AMBIG 113 / MISSING-PATH 83 / LINE-OOB 0 / NOT-FOUND 12，2026-10-15 01:30 实测；本轮 338 → 352 的 +14 全来自「方案甲-2 落地」新节与 README 两条新 bullet 新引的宿主/Core 行号，**LINE-OOB 仍 0、NOT-FOUND 明细与前两轮逐行一致**（12 条全是 `jni-0.22.4/src/env.rs`、`prd.md`、`AlertDialog.java`、`usr/include/android/log.h` 这些扫描根之外的既有项）。上一轮末 338 条：OK 139 / AMBIG 106 / MISSING-PATH 81 / LINE-OOB 0 / NOT-FOUND 12，2026-10-14 23:45 实测；本轮 322 → 338 的 +16 条来自「算不拢测清 + 方案甲卡在『输入框身份』上」新节与 README 两条新 bullet 新引的宿主/Core 行号，NOT-FOUND 明细与上一轮**逐行一致**、LINE-OOB 归零。**那一轮 LINE-OOB 又被引出来过 1 条**：新节里裸写本仓 `engine` 下的那个 `lib.rs` 行号，被对到 msime-develop 里只有 101 行的同名文件——**正是本行末尾那条既有教训，我又犯了一次**，改成本仓全路径后当场归零（代价是落进 MISSING-PATH）。再上一轮 322 条：OK 133 / AMBIG 102 / MISSING-PATH 75 / LINE-OOB 0 / NOT-FOUND 12，2026-10-14 21:10 实测；**这轮从 290 涨到 322 全是 D3 那一节新引的 Core 行号**——`correction/costs.rs:45`、`correction/mod.rs:26/48`、`fuzzy/rules.rs:38`、`typo/kind.rs:7`、`typo/mod.rs:17`、`ranking/mod.rs:33/64`、`sentence/viterbi.rs:319`、`commit/last.rs:5`、`learning/mod.rs:194`、`platform/config/mod.rs:73` 这类**短格式**落进 MISSING-PATH（脚本认的六个前缀里没有 `qingjian/crates/…` 的 crate 根写法），**LINE-OOB 仍 0、NOT-FOUND 明细与前几轮逐行一致**；18:15 那次是 290 / 114 / 101 / 63 / 0 / 12；14:41 那次是 288 / 113 / 101 / 62 / 0 / 12，17:00 是 289 / 113 / 101 / 62→63 / 0 / 12（+1 MISSING-PATH 是修正表测试注释里那条 Core 短格式引用，脚本认的六个前缀里没有它，**属既有口径而非新问题**），最后这次 +1 OK 是本节新写的两条 Core 挂点引用被正常解析到；03:29 是 282 / 110 / 101 / 59 / 0 / 12，13:31 复跑同一组，本轮 C1 那一节与待办新增 6 条引用 ⇒ 计数到 288，MISSING-PATH 59→62 的三条是本仓短格式引青简生成器的那几个文件（`phrases/mod.rs:231`、`fuzzy/rules.rs:106`、`tools/dict-convert/src/lexicon/readings.rs:138`，脚本认的六个前缀里没有 `qingjian/tools/…`），**LINE-OOB 仍 0、NOT-FOUND 明细与上两轮逐行一致**；当年 03:29 那轮「已知失效项」第 9 条新写的几处宿主行号（`apply()` 里那个 handled 判定、硬件键映射里 DEL 归零那条、试用行与九键面板的删字行、上游 macOS 壳的 controller 段）都与文档里已有引用**同串**，脚本按引用串去重所以计数不动，但**逐条 sed 取行核对过**；比本行此前记录的 277 条多 5 条，来自方案 A 那一节新引的宿主与 Core 行号，**LINE-OOB 仍为 0**。**AMBIG 81→99→101 不是回归**：多出来的是宿主 Java 文件（候选菜单、输入服务那两个）与 Core 里重名的 `mod.rs` 这类，它们在 msime-develop 里有同名孪生，脚本只能报"存在多份"（判定口径见本节上方第 1 条局限）。MISSING-PATH 50→59 = 本仓自引加了 `qingshan/` 前缀（脚本认的六个前缀里没有它）+ 青简 Core 的 crate 根短格式。**上一轮 LINE-OOB 真被引出来过 1 条**：裸写 `engine` 下的那个 lib.rs 会被对到 msime-develop 里只有 101 行的同名文件，改成本仓全路径后归零，代价是落进 MISSING-PATH——**引本仓文件一律带 `qingshan/` 前缀**） |
+| `engine/tools/audit_citations.py` | 注释与文档里每条 `文件:行号` 是否还能落到真实行 | 375 条：OK 146 / AMBIG 122 / MISSING-PATH 94 / **LINE-OOB 0** / NOT-FOUND 13（2026-10-15 21:58 实测；本轮 373 → 375 的 +2 **又全部落在 AMBIG**（OK / MISSING-PATH / NOT-FOUND 一条没动）——新引的是 `UpdateJobService.java`、`AboutPage.java`、`ImeLetterRows.java` 这类上游有逐字孪生的宿主文件与 `LICENSE` 的条款行，属既有口径；**LINE-OOB 仍 0**。上一轮 373 条：OK 146 / AMBIG 120 / MISSING-PATH 94 / **LINE-OOB 0** / NOT-FOUND 13（21:05 实测；本轮 368 → 373 的 +5 **全部落在 AMBIG**（OK / MISSING-PATH / NOT-FOUND 三项一条没动）——新引的宿主 Java 与 `LICENSE` 条款行里，那些在上游有逐字孪生的文件脚本只能报"存在多份"，属既有口径；**LINE-OOB 仍 0**。上一轮 368 条：OK 146 / AMBIG 115 / MISSING-PATH 94 / **LINE-OOB 0** / NOT-FOUND 13（19:47 实测，19:48 复跑同数；本轮 366 → 368 的 +2 落在 OK/AMBIG 各一条，**MISSING-PATH 与 NOT-FOUND 的明细一条没动**（与上一轮逐行比对：只有 `qingshan/host/java/app/msime/android/account/UpdateApi.java` 的 45 行、`.../home/AboutPage.java` 的 52 行、`qingshan/host/gradle-app/app/build.gradle.kts` 的 48 行 三条的**出处列表**多了 README，脚本按引用串去重所以计数不动）。新引的行号来自「密码框路径 C 真机验证」「A3 第 7 批落表」「签名链落地」三新节与 README 两条新 bullet。上一轮 366 条：OK 145 / AMBIG 114 / MISSING-PATH 94 / **LINE-OOB 0** / NOT-FOUND 13（2026-10-15 03:35 实测；本轮 354 → 366 的 +12 全来自「A3 第 7 批起草」「签名链与发布准备评估」两新节与 README 三条新 bullet 新引的上游/宿主行号，**OK 与 AMBIG 一条没动**，+12 全落 MISSING-PATH（83 → 94）：这批引用是 `msime-develop/platforms/android/scripts/signing.sh`、`msime-develop/.github/workflows/release-android.yml`、`qingshan/host/java/app/msime/android/account/UpdateApi.java` 这类带目录前缀的完整写法，脚本认的六个前缀里没有 `msime-develop/` 与 `qingshan/`，**属既有口径不是新问题**；NOT-FOUND 12 → 13 的那 1 条是 `env.sh:25`——`/d/toolchains/env.sh` 在扫描根之外，永远认不到，与 `jni-0.22.4`/`prd.md`/`AlertDialog.java` 那 12 条同类。**本轮一度把 LINE-OOB 引出 3 条**：新节里把 `NOTICE.md` 的 24 行、26–28 行与 `build.gradle.kts` 的 48 行**裸写**（不带目录前缀），被对到 msime-develop 的孪生文件（那儿那个 NOTICE.md 只有 5 行）——**本行末尾那条既有教训我又犯了一次**（那条教训本身写着"我又犯了一次"），补齐 `qingshan/` 前缀后当场归零；顺带把 `UpdateApi.java`、`AboutPage.java` 这类在上游有**逐字孪生**的引用改成完整路径（孪生行号目前恰好一致，但那是巧合不是保证，裸写等于赌两份文件永不分叉）。**补一条自指的坑**：本行刚写下"裸写 `NOTICE.md` 24 行会被对到孪生文件"这句话时，那句话里**照抄下来的三个"文件名+冒号+行号"裸引用自己被审计脚本当真了**，复跑一次立刻变 369 条 / LINE-OOB 3——改成"`NOTICE.md` 的 24 行"这种不被解析的写法才归零。**描述错行的句子本身不能沿用错行的写法。**上一轮 354 条：OK 145 / AMBIG 114 / MISSING-PATH 83 / **LINE-OOB 0** / NOT-FOUND 12（2026-10-15 02:40 实测；本轮 352 → 354 的 +2 来自「A3 第 6 批起草」新节与 README 那条新 bullet；起草用的离线判据脚本在 `/d/toolchains/tmp/` 下、不在扫描根里，故不产引用（临时脚本不进仓是刻意的）。上一轮 352 条：OK 144 / AMBIG 113 / MISSING-PATH 83 / LINE-OOB 0 / NOT-FOUND 12，2026-10-15 01:30 实测；本轮 338 → 352 的 +14 全来自「方案甲-2 落地」新节与 README 两条新 bullet 新引的宿主/Core 行号，**LINE-OOB 仍 0、NOT-FOUND 明细与前两轮逐行一致**（12 条全是 `jni-0.22.4/src/env.rs`、`prd.md`、`AlertDialog.java`、`usr/include/android/log.h` 这些扫描根之外的既有项）。上一轮末 338 条：OK 139 / AMBIG 106 / MISSING-PATH 81 / LINE-OOB 0 / NOT-FOUND 12，2026-10-14 23:45 实测；本轮 322 → 338 的 +16 条来自「算不拢测清 + 方案甲卡在『输入框身份』上」新节与 README 两条新 bullet 新引的宿主/Core 行号，NOT-FOUND 明细与上一轮**逐行一致**、LINE-OOB 归零。**那一轮 LINE-OOB 又被引出来过 1 条**：新节里裸写本仓 `engine` 下的那个 `lib.rs` 行号，被对到 msime-develop 里只有 101 行的同名文件——**正是本行末尾那条既有教训，我又犯了一次**，改成本仓全路径后当场归零（代价是落进 MISSING-PATH）。再上一轮 322 条：OK 133 / AMBIG 102 / MISSING-PATH 75 / LINE-OOB 0 / NOT-FOUND 12，2026-10-14 21:10 实测；**这轮从 290 涨到 322 全是 D3 那一节新引的 Core 行号**——`correction/costs.rs:45`、`correction/mod.rs:26/48`、`fuzzy/rules.rs:38`、`typo/kind.rs:7`、`typo/mod.rs:17`、`ranking/mod.rs:33/64`、`sentence/viterbi.rs:319`、`commit/last.rs:5`、`learning/mod.rs:194`、`platform/config/mod.rs:73` 这类**短格式**落进 MISSING-PATH（脚本认的六个前缀里没有 `qingjian/crates/…` 的 crate 根写法），**LINE-OOB 仍 0、NOT-FOUND 明细与前几轮逐行一致**；18:15 那次是 290 / 114 / 101 / 63 / 0 / 12；14:41 那次是 288 / 113 / 101 / 62 / 0 / 12，17:00 是 289 / 113 / 101 / 62→63 / 0 / 12（+1 MISSING-PATH 是修正表测试注释里那条 Core 短格式引用，脚本认的六个前缀里没有它，**属既有口径而非新问题**），最后这次 +1 OK 是本节新写的两条 Core 挂点引用被正常解析到；03:29 是 282 / 110 / 101 / 59 / 0 / 12，13:31 复跑同一组，本轮 C1 那一节与待办新增 6 条引用 ⇒ 计数到 288，MISSING-PATH 59→62 的三条是本仓短格式引青简生成器的那几个文件（`phrases/mod.rs:231`、`fuzzy/rules.rs:106`、`tools/dict-convert/src/lexicon/readings.rs:138`，脚本认的六个前缀里没有 `qingjian/tools/…`），**LINE-OOB 仍 0、NOT-FOUND 明细与上两轮逐行一致**；当年 03:29 那轮「已知失效项」第 9 条新写的几处宿主行号（`apply()` 里那个 handled 判定、硬件键映射里 DEL 归零那条、试用行与九键面板的删字行、上游 macOS 壳的 controller 段）都与文档里已有引用**同串**，脚本按引用串去重所以计数不动，但**逐条 sed 取行核对过**；比本行此前记录的 277 条多 5 条，来自方案 A 那一节新引的宿主与 Core 行号，**LINE-OOB 仍为 0**。**AMBIG 81→99→101 不是回归**：多出来的是宿主 Java 文件（候选菜单、输入服务那两个）与 Core 里重名的 `mod.rs` 这类，它们在 msime-develop 里有同名孪生，脚本只能报"存在多份"（判定口径见本节上方第 1 条局限）。MISSING-PATH 50→59 = 本仓自引加了 `qingshan/` 前缀（脚本认的六个前缀里没有它）+ 青简 Core 的 crate 根短格式。**上一轮 LINE-OOB 真被引出来过 1 条**：裸写 `engine` 下的那个 lib.rs 会被对到 msime-develop 里只有 101 行的同名文件，改成本仓全路径后归零，代价是落进 MISSING-PATH——**引本仓文件一律带 `qingshan/` 前缀**） |
 
 审计脚本按**文件名**锚定，六类情况它自己判不了：写成 `crate/src/x.rs` 这类 cargo 相对前缀的引用
 （真身还要再加 `crates/`）、装在 `$CARGO_HOME` 里根本不在扫描根的 `jni-0.22.4/src/env.rs`
@@ -448,8 +448,17 @@ W qingshan: [msime_android::wire] 回 ok:false: create_failed: 词库加载失�
 10. **跨会话撤销的窗口 = 进程存活期**：`recent_commits` 只活在内存里（方案甲-2 按包名挂起
    `EngineSession`，见「当前状态」那条），进程被杀 / 冷启动后账本丢失，**没有撤销入口**。
    2026-10-15 用户裁定接受这个边界（跨冷启动要改 Core，已排除）。
-11. **「检查更新」指向的是水杉的发行版，点了会白下一趟**（2026-10-15 读码定位，用户裁定：
-   记为失效项，**不改 Java**）。宿主那三条地址是上游写死的：
+11. **「检查更新」入口已关掉（2026-10-15 21:47 方案 b 落地，宿主 Java 树的第 3 处破例）**：
+   改动在 `qingshan/host/java/app/msime/android/home/UpdateJobService.java`——加一个命名开关
+   `IN_APP_UPDATES_DISABLED = true`，让 `installedFromPlay()` 走
+   `IN_APP_UPDATES_DISABLED || PLAY_STORE.equals(installer(context))`。借 Play 那道现成的门
+   一次带走三处消费：关于页的「检查更新」药丸（`AboutPage.java:190`/`:219`）、
+   「自动更新」与「更新通道」两行（`:122-126`）、每天一次的后台任务（`UpdateJobService.java:51`）。
+   **没删 Play 来源判定、没动 `UpdateApi.java` 的三个地址常量**：将来接青杉自己的发布物时
+   把开关翻成 `false` 就恢复原行为（用开关而不是直接 `return true`，是为了不把 `installer()`
+   变成死代码、也让回退是一行）。编译实测 `./gradlew compileDebugJavaWithJavac` 退出码 0；
+   **本轮没重打 APK**（APK mtime 仍 18:09:20）⇒「药丸确实不显示」这条**尚未真机验**，下一轮出包时看。
+   下面是现象与两次裁定的完整历史（原文保留）：宿主那三条地址是上游写死的：
    `qingshan/host/java/app/msime/android/account/UpdateApi.java:45` 查
    `https://msime.app/api/releases?platform=android`、`:47` 从
    `https://github.com/metasequoiaime/msime/releases/download/` 取包、`:49` 先试镜像
@@ -468,7 +477,9 @@ W qingshan: [msime_android::wire] 回 ok:false: create_failed: 词库加载失�
    与发布侧上传 `.sha256`。**两条修正**：① 危害比本节原话轻——`UpdateJobService.java:92-94` 显示
    自动更新**默认关**，所以只有用户主动点一下才会白下一趟，不是每天自己发生；
    ② 关入口**不能走 `local_mode`**——它是键盘视图状态（7 处读它，含 `ImeLetterRows.java:210`），
-   走它关不掉关于页反而会改键盘行为。**）
+   走它关不掉关于页反而会改键盘行为。**
+   **（现值 2026-10-15 21:47：按 b 落地，见本条开头。**上面那段「1 个文件 1 行」的说法
+   实现时改成 2 行（开关常量 + 短路），理由如上。**）
 
 ## 构建环境的已知限制
 
@@ -883,7 +894,7 @@ ANSI 假零最值得先读）。
   **Java 侧破例 1 行代码 + 1 行注释**（`core/MSIMEInputService.java:1697-1698`，
   把宿主已经算好的 `currentEditorPackage` 写进建会话选项的 `application` 键）；
   符号数仍 **102**（`verify_symbols.py` 两 ABI 双向差集为空），不改任何交互、不动 `stop()`/`destroy` 时机。
-  与上游的总 diff 现为 6 行改动内容，逐行声明见 `NOTICE.md` §5a 第 1 条。
+  与上游的总 diff 现为**两个文件**：本文件 4 行（两处）+ `UpdateJobService.java` 11 增 1 删（2026-10-15 关掉更新入口，其中 9 行是注释），逐行声明见 `NOTICE.md` §5a 第 1 条与第 7 条。
   Rust 侧：`lib.rs` 多解 `application` 与 `preferences.learning` 两个键（后者是 Java 在
   `learningSuppressed()` 为真时写的，`MSIMEInputService.java:1298`、`:1905-1907`）；
   `session.rs` 用 Core 现成的 `Engine::swap_session`（`engine/session.rs:57-86`）
@@ -996,6 +1007,24 @@ ANSI 假零最值得先读）。
   162–171 共 10 行（快照证明是既有问题，不是本轮造成），已合回单行并断言竖线 = 3（该表是两列）；
   同一行开头的体积从 49,846,673 B 更新到现值 **49,897,529 B**（并补上甲-2 与第 7 批两级历史值）。
   审计复跑 **368 条与上一轮终值逐行完全一致**（`diff` 空输出）⇒ 合行没动任何引用。
+- **本地建仓 + 首次提交完成，GPL 方案 B 落地（2026-10-15 21:27–21:55）**：
+  `git init -b main` → 首次提交 `db5ad5a`（**579 文件 / 92,024 行**，作者用的是这台机器已有的
+  全局 config，**没改任何 git 配置**）。提交前五条安全核查全过（仓内密钥 0 命中、暂存清单里
+  构建产物/APK/快照 0 命中、秘密扫描只命中两处文档占位示例），过程中抓到并修掉两件事：
+  `git add -A` 把 `engine/tools/__pycache__/*.pyc` 收了进来（`.gitignore` 补 `__pycache__/`+`*.pyc`，
+  重暂存后 580 → 579）；这台机器 `core.autocrlf=true` 会把 `host/scripts/sign-apk.sh` 检出成 CRLF
+  让 Git Bash 跑不动（新增 `.gitattributes` 钉 `*.sh eol=lf`，`git check-attr` 复验）。
+  **§5 现在写的是"从哪取 + 怎么重建"**：两个上游地址都是查出来的（青简 = 本地那份的
+  `git remote -v`，HEAD `4a3e963d…`；水杉 = 其 `README.md:8` 的仓库链接，本地那份仍靠 zip MD5 固定），
+  两份 TSV 的重建路径有逐字节 `cmp` 依据，三处过期数字（词库 / 锁 / 桩数）已修。
+  **⚠ 还差一步**：青杉自己的公开地址在 NOTICE 与「构建前提」里都是「⚠ 待填」占位，
+  push 由用户执行（命令见 PIN「GPL 方案 B 落地」一节末尾），agent 不接触凭据。
+- **「检查更新」入口已按方案 b 关掉（2026-10-15 21:47，第二个提交）**：宿主 Java 树**第 3 处破例**，
+  `UpdateJobService.java` 11 增 1 删（命名开关 + 注释块，不是直接 `return true`）。
+  编译退出码 0；**本轮没重打 APK ⇒ 关于页那三样是否真的消失，尚未真机验**。详见已知失效项第 11 条。
+- **横屏下候选条整条不显示 = 新发现、未定位**（2026-10-15 20:35 撞见，本轮按裁定**只记不测**）：
+  `mCurrentOrientation=90` 时键位正常、会话活着、候选面板一个节点都没有，锁回竖屏立刻恢复。
+  已记 PIN 待办第 21 条与环境陷阱第 47 条；下一轮先确认"是不是只有试用页这样"。
 - 候选长按管理菜单（B1/B2 真机口径，2026-10-13 12:00 复测）：**B1 三件从「静态 + 单测」
   升级为真机入口可达**——「优先显示」`pinCandidateRaw`（`qingshan/engine/src/lib.rs:286`）、
   「固定到首位」`fixCandidatePositionRaw`（`:293`）、「取消固定」`clearCandidatePositionRaw`（`:301`）
