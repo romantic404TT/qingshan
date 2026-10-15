@@ -29,6 +29,11 @@ zip 名 `msime-develop.zip`、MD5 `cfdab2624a8e6469b588984477f1ed65`、29,461,24
 **⚠ 待填**：`https://github.com/<待填>/<仓库名>.git` —— 用户在 2026-10-15 拍板"稍后自己填"，
 所以这一行现在是**空的占位**，push 之前它不算一个能被第三方取到的位置，下面所有"从哪取"的承诺
 都还没生效。**对外发包之前必须先把它填上**（`third-party/PIN.md` 待办第 19 条）。
+**（现值 2026-10-16 00:41：仍未填。** 连续两轮任务书里这一行都是模板占位
+（`【用户在此填实际 URL，…】`），agent 不猜地址。本机 `git rev-list --count HEAD` 实测 2
+（`db5ad5a` + `a86de33`），既没有 remote 也没有第三个提交，所以上面那句"还没生效"照旧成立；
+填 URL 与 push 由用户自己做，agent 不接触凭据。本节上面两个上游地址本轮走 HTTP 复核，
+两个仓都真实存在。**）
 
 分发本 APK 时，本仓库即**完整对应源码**（complete corresponding source），包含：
 `engine/`（Rust 适配层全部源码与 `Cargo.toml`）、`host/`（Java 树、res、Manifest、assets 里的

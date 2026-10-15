@@ -491,6 +491,35 @@ AGP 9.x 要求 Gradle 9.6+），升 AGP 会直接破坏构建。
     `settings put system accelerometer_rotation 0` + `user_rotation 0`（第 38 条那版脚本本来就有，
     我这次抄漏了）；② 循环里每 5 行记一次 `mCurrentOrientation`，事后能证明这段数据是不是干净的；
     ③ **横屏下候选条不显示**这件事本身没有定位，属新发现，见待办第 21 条。
+    **（现值 2026-10-16 00:14：本条第 15 行那句「横屏下键位在、会话活着、候选条就是不出现」和
+    ③ 那条"新发现"，本轮**复现不出来**，先降级为"未定位"，别当已证事实引用。**
+    横屏 + 键位点击、横屏 + `input text`、竖屏两种探针，四格候选条全部正常（10 / 10 / 6 / 10 条，
+    见「横屏候选条调查」一节）。**注意：本轮中途我曾用一支写坏的计数器（`cls=='Button'` 等值比较，
+    见第 48 条）"证明"过这是 `input text` 不建组合造成的假象——那个解释是假的，已撤回。**
+    剩下两个没排除的差别：当时是真实传感器旋转、且预检脚本按竖屏坐标表点横屏键位（点空就根本不建组合）。
+    本条 ① ② 两条防御**照旧要做**，但理由要换一个：不是"横屏候选条会消失"，
+    而是"横屏键位坐标对不上竖屏那套表"。**）
+48. **自己写的计数器必须先跑正样例，否则它会"完美印证"你的假设**（2026-10-16 00:14 踩，本轮最贵的一条）：
+    本轮我为「横屏候选条」写了个候选计数：`[n for n in ns if n['cls']=='Button' and '你' in n['text']]`。
+    `uiautomator` 的 `class` 是**全限定名** `android.widget.Button`，等值比较 `'Button'` **恒假**
+    ⇒ 这一支对任何 dump 都回 0。我拿它跑了"竖屏 `input text`"与"横屏 `input text`"两格，
+    两格都是 0，于是当场宣布证伪了待办第 21 条、并把「`input text` 不建组合」写进了文档。
+    实际改成 `n['cls'].endswith('Button')` 重跑，**同一批操作竖屏出 6 条、横屏出 10 条候选**，
+    前面那条"决定性对照"整段作废。
+    ⇒ 三条硬规矩：① **计数器要先在已知有候选的 dump 上数出非零**（本轮的正样例是 `L4.xml`，
+    截图 `L5.png` 肉眼可见 10 条，脚本却数出 0 —— 那一刻就该停）；② **一个"0 结果"若刚好
+    印证了待验证的假设，它首先是可疑的**，要用第二种口径交叉（截图 / `grep -c` 原文 / 换属性名）；
+    ③ `cls` 一律 `endswith`，别等值比较。第 23 条讲的是"注入式点击的 0 不能当结论"，
+    这条讲的是**读侧的 0 同样不能**——两侧都会造出假 0。
+49. **这台 OPPO 上 `settings put system user_rotation` 单独写不转屏，要用 `cmd window` 两条**（2026-10-15 23:30–23:40 实测）：
+    `settings put system user_rotation 1` 之后 `settings get` 回 1、`dumpsys window` 里
+    `mUserRotation=ROTATION_90` 也确实变了，但 `mFullConfiguration` 仍是 `ROTATION_0 … port`，
+    屏幕**不转**——因为 `mFixedToUserRotation=false`（ColorOS 默认不让用户旋转覆盖应用请求）。
+    真正生效的是这两条：`cmd window user-rotation lock 1` + `cmd window fixed-to-user-rotation -d 0 enabled`，
+    之后 `dumpsys display` 的 `mCurrentOrientation=1`、`screencap` 出 2400×1080。
+    ⇒ 复位也是两条一起：`fixed-to-user-rotation -d 0 default` + `user-rotation lock 0` +
+    把 `accelerometer_rotation` 写回原值。**注意 `cmd window user-rotation free` 会顺手把
+    `accelerometer_rotation` 改成 1**（实测：执行后 accel 从 0 变 1），照原值恢复要在它之后做。
 
 ## 方案 A 实现与真机验收（2026-10-14 03:06–03:25）
 
@@ -3177,6 +3206,220 @@ Java 能成立的原因。`helpcodes/` 与日文那一组（`Bootstrap.java:246-
 > 也没给恢复 API（越界，已排除）；甲-2 是不改 Core 的前提下唯一干净的可达方案。
 > 这是产品决定，写清楚即可（README「已知失效项」第 10 条同步）。
 
+## 横屏候选条调查（2026-10-15 23:05–2026-10-16 00:14，只读 + 真机，代码净改动 0）
+
+用户报的现象：**横屏时候选条整条不显示**（待办第 21 条、环境陷阱第 47 条那次撞见的）。本轮按
+「试用页 / 第三方输入框 / 读码 / 与上游比对」四步查。结论先说：**横屏本身不坏，候选条在横屏
+正常出；但 20:35 那次"0 候选"本轮没能复现，它的成因仍未知；顺着这条线量到两条真缺陷。**
+
+### 〇、先记一次自我撤回：我自己的计数器写坏了，差点把假结论写成"已定位"
+
+本轮中途我一度宣布"已证伪：`input text` 不建组合，所以候选条空与方向无关"，并把它写进了
+文档。**那个证伪本身是错的，全部撤回。** 错因是我这轮新写的计数函数：
+
+```python
+cand=[n for n in ns if n['cls']=='Button' and '你' in n['text']]   # 错
+```
+
+`uiautomator` 的 `class` 属性是**全限定名** `android.widget.Button`，等值比较 `'Button'` **恒假**
+⇒ 这一支永远数出 0 条，看起来"完美印证"了假设。改成 `n['cls'].endswith('Button')` 之后，
+同一批 dump 立刻数出 6–10 条。**⇒ 新记环境陷阱第 48 条：计数器必须先跑正样例。**
+下表是**用修正后的计数器重跑**的结果，每格都打出了候选词原文，不是光秃秃的 0。
+
+### 一、真机实测（OPPO PEGT10 / Android 13 / 1080×2400 / arm64，包 `app.qingshan.ime`）
+
+| # | 场景 | 探针 | 候选条 | 证据 |
+|---|---|---|---|---|
+| 1 | 试用页**横屏**、键位逐字点 `nihao` | 屏幕键位 | **正常 10 条** + `1/5` + 展开键 | `a3bm/L4.xml`、`L5.png` |
+| 2 | 系统设置搜索框**横屏**、键位逐字点 | 屏幕键位 | **正常 10 条** | `a3bm/S4.png` |
+| 3 | 试用页**竖屏**、`input text nihao` | `input text` | **6 条**（`你好/你好好/你好像/你好久`…） | 本轮 2×2 矩阵 |
+| 4 | 试用页**横屏**、`input text nihao` | `input text` | **10 条**（同上多 4 条） | 本轮 2×2 矩阵 |
+
+⇒ **`input text` 会建组合**（第 3、4 格都是候选照常出现），我上面那个"不建组合"的说法作废。
+⇒ 横屏 + 竖屏、两种探针，**四格全部正常**，"横屏候选条不显示"在本机本轮口径下**复现不出来**。
+20:35 那次的 0 候选**仍未定位**，剩下两个没排除的差别：① 当时是**真实传感器旋转**，本轮是
+`cmd window user-rotation lock 1` + `fixed-to-user-rotation enabled` 强转（见第 49 条），
+两者给 IME 窗口的度量未必一致；② 当时是 40 条预检脚本**按竖屏坐标表**去点横屏键位，
+点空 ⇒ 根本没建组合（这条最像，但没证据，属推测）。
+
+### 二、读码：候选条的可见性里**没有方向这一维**
+
+- 候选条不是 `onCreateCandidatesView` 那条独立窗口，是在 `onCreateInputView()` 里纯代码搭的：
+  `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:6859`（`candidates` 那一行）、
+  `:6871`（`imeToolbar.addCandidateLine(...)`）。全仓 grep `onCreateCandidatesView` **0 命中**。
+- 三行可见性判定（同一文件）：`qingshan/host/java/app/msime/android/core/MSIMEInputService.java:7818`
+  工具栏行 `= !heightMode && idle && !hasDiagnostic && (...)`、`:7832` 候选行
+  `= !heightMode && !idle && !hasDiagnostic`、`:7836` 候选视口 `= !idle && !hasDiagnostic`。
+  三个式子里**都没有 orientation**。
+- 全仓与方向相关的分支只有两处，都不碰候选条：
+  `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:3549`（分离键盘）、
+  `qingshan/host/java/app/msime/android/core/ImeBottomBar.java:186`（底部留白）。
+- **`layout-land` / `values-land` 在本仓和上游都不存在**：
+  `find msime-develop/platforms/android/res qingshan/host/res -maxdepth 1 -type d | grep -c land` → **0**
+  （构建产物 `build/intermediates/.../merged.dir/values-land` 是 androidx 依赖带的，不算源）。
+- 候选行高度与方向无关：`qingshan/host/java/app/msime/android/core/ImeToolbar.java:22`
+  `CANDIDATE_LINE_DP = 42`，由 `updateCandidateViewportHeight()` 一处算，不读 orientation。
+
+### 三、两条真缺陷
+
+**① 旋转把组合冲掉。** 竖屏组合中（preedit `nihao` 在、候选条在）→ 锁到横屏 → preedit 节点消失、
+候选条消失，且字母**原样落进输入框**
+（`a3bm/Y4.xml` 里 `tryout_field` 的文本是 `nihaonihao`，即组合那串字母原样进了框；
+本轮框里本来就有测试残留，所以**只报"多出原样字母"这一件事，不报起始值**）。
+logcat 同一时刻出现一整条会话建立：
+`[msime_android::session] 会话建立 125 ms（含词库载入），挂起键=Some("app.qingshan.ime")，换回挂起上下文=true`
+（`qingshan/engine/src/session.rs:467` 那句日志），词库 58 ms + 译词表 67 ms 重新载入一遍；
+`dumpsys window` 里 IME 窗口 `req=2400x794` → `req=2400x683`（差 111 px ≈ 标题行 34dp + 候选行 42dp）。
+调用链：`qingshan/host/java/app/msime/android/core/MSIMEInputService.java:1700` 的
+`NativeClient.create(...)` 由 `startEngineSession` 发出，`scheduleEngineStartup`（同文件 `:1629`）
+在输入会话重启时再走一次 ⇒ 新会话没有组字状态，`idle=true`，候选行按 `:7832` 隐藏，**这是正确行为**。
+**未定**：上游水杉在旋转时是否也重建会话（那段 Java 是上游原样代码，我们的改动只有
+`:1698` 那行 `options.put("application", currentEditorPackage)`）。要定它必须装上游 APK 做对照，
+本机装不了（包名同为 `app.msime.android` 系 + 证书不同，见环境陷阱第 46 条）。
+但**词库每次重建都重解 125 ms 这一半是我们自己的**——上游 C++ 引擎有没有跨会话缓存未核实。
+
+**② 偏好读取恒失败，连带候选条在任何方向都会消失 4 秒。** 键盘上那句
+`设置读取或应用失败，保留当前设置` 不是偶发：它的源头 `loadPreferencesRaw` 还躺在
+`qingshan/engine/src/stub.rs:100` 的 85 个占位里，回 `{"ok":false,"error":"not_implemented"}`
+→ `qingshan/host/java/app/msime/android/core/NativeClient.java:66` 原样交给宿主 →
+`qingshan/host/java/app/msime/android/core/MSIMEInputService.java:2145` 的 `value(response)`
+（同文件 `:844`：`ok` 不为真就 `throw new JSONException("Shared runtime rejected operation")`）抛出去
+→ `:2147` 的 catch 必进 → `:2149` 置 `preferencesNotice`，永久挂在那儿。
+**（此处 2026-10-16 00:41 更正一次：上一版我写的是"`PreferencesReloader.java:39` 的 catch 把 result 置 null
+⇒ `reloadPreferences(null)` 抛 `Preferences unavailable`"，那是推的、不成立——桩返回的是合法 JSON 字符串，
+不抛也不为 null。真抛点是 `:2145` 的 `value()`。结论不变，机制以此为准，详见「loadPreferences 真实现评估」一节第 〇 条。）**
+空闲渲染那一趟
+（同文件 `:7813` `if (idle && !modeLabel) announceIdleNotice(preferencesNotice);`）会把它
+经 `notice()` 提升成诊断行，`hasDiagnostic`（`:7804`）一真，`:7818` 与 `:7832` **同时**为假
+⇒ **工具栏行和候选行一起没了**，4 秒后自动恢复（`qingshan/host/java/app/msime/android/policy/InputDiagnosticPolicy.java:5`
+`DISMISS_DELAY_MILLIS = 4_000L`）。去重靠 `announcedIdleNotice`（同文件 `:468`/`:473`），
+所以每次进程存活期内只炸一次，但**炸的时候正好覆盖"旋转完接着打字"这个动作**，
+这就是用户眼里"横屏候选条不显示"最可能的样子。
+
+### 四、与上游比对：这套逻辑我们一行都没动
+
+`diff -rq msime-develop/platforms/android/java qingshan/host/java` 实测 **4 行**：
+`MSIMEInputService.java` 与 `UpdateJobService.java` differ，`AccountPlugin.kt`、`VoicePlugin.kt`
+仅上游有。候选条可见性那四句在两边**逐字一致**，只是行号差 2（我们前面多了一个 2 行的 hunk）：
+
+| 语句 | 上游行 | 本仓行 |
+|---|---|---|
+| `boolean toolbarRow = !heightMode && idle && !hasDiagnostic && (...)` | 7816 | 7818 |
+| `ViewPolicy.setVisible(candidateLine, !heightMode && !idle && !hasDiagnostic)` | 7830 | 7832 |
+| `preferencesNotice = " · 设置读取或应用失败，保留当前设置"` | 2147 | 2149 |
+| `if (idle && !modeLabel) announceIdleNotice(preferencesNotice)` | 7811 | 7813 |
+
+⇒ **分类结论：不是"试用页独有"，不是"全平台普遍"，也不是"适配层缺口造成的横屏渲染问题"。**
+候选条的显示规则是**上游已知**代码；本仓的**适配层缺口**只有第 ② 条那一项（`loadPreferences`
+是 stub），它造成的现象与方向无关；第 ① 条（旋转丢组合）是上游会话生命周期 + 我们引擎无跨会话
+缓存的叠加，上游那半**未核实**。
+
+### 五、下一轮要看得更准，还缺这些观测
+
+1. 上游 APK 的旋转对照（要先解决同包名共存：换 `applicationId` 或找第二台机）。
+2. 用户侧的复现口径：他是在**哪个应用**、**打字中途转屏**还是**转屏后再打字**看到的——
+   前者指向第 ① 条，后者若发生在诊断那 4 秒内指向第 ② 条。
+3. 九键 / 手写面板横屏未测（本轮只测了 26 键拼音）。
+4. 分离键盘（`:3549` 那条方向分支）横屏未测——它是唯一一处"横屏会换画法"的代码。
+
+## loadPreferences 真实现评估（2026-10-16 00:41，只读，代码净改动 0）
+
+用户给的门槛：**< 100 行且不破 Java 零改动就直接做，否则停下出方案。** 结论先说：
+**≥ 100 行，且"只实现 load"根本消不掉那句提示 ⇒ 本轮不实现，方案如下。**
+
+### 〇、先更正上一轮我自己写错的一条因果
+
+上一轮「横屏候选条调查」第 ② 条里我写的是：桩回 `{"ok":false,…}` → `PreferencesReloader.java:39`
+那个 `catch` 把 `result` 置 null → `reloadPreferences(null)` 里 `throw new JSONException("Preferences unavailable")`。
+**这条链是推的，不是测的，中间那步不成立**：桩返回的是一个**合法的 JSON 字符串**（不是 null、也不抛），
+所以 `reader.read()` 正常返回、`result` 非 null，`"Preferences unavailable"` 那一支**走不到**。
+真正抛的是下一行：`qingshan/host/java/app/msime/android/core/MSIMEInputService.java:2145` 的
+`JSONObject snapshot = value(response);`，而 `value()`（同文件 `:844`）是
+
+```java
+        if (!JsonPolicy.strictTrue(envelope.opt("ok")))
+            throw new JSONException("Shared runtime rejected operation");
+```
+
+⇒ 抛的是 **"Shared runtime rejected operation"**，`catch` 在 `:2147`、置提示在 `:2149`。
+结论不变（那句提示确实是 stub 造成的），**但机制要按这条改**，两处已同步更正。
+
+### 一、偏好这条路上有**五个** native，全是桩
+
+`qingshan/engine/src/stub.rs` 实测命中（行号是本轮 grep 的）：`defaultPreferencesRaw` 84 行、
+`loadPreferencesRaw` 100 行、`restoreDefaultPreferencesRaw` 120 行、`savePreferencesRaw` 121 行、
+`updatePreferencesRaw` 141 行。宿主侧对应五个包装（`.../core/NativeClient.java:66`、`:85`、`:90`、`:280`、`:592`）。
+
+### 二、为什么"只做 load"消不掉那句提示（这是本轮最值钱的一条）
+
+`applyPreferencesSnapshot` 的签名是 `throws JSONException`，而它**自己内部又要过一次 native**：
+`qingshan/host/java/app/msime/android/core/MSIMEInputService.java:2260`
+
+```java
+        JSONObject result = value(NativeClient.updatePreferences(session, sessionSnapshot.toString()));
+```
+
+`:2332` 紧接着 `JSONObject nextView = result.getJSONObject("view");`。这一整段都在
+`:2143` 那个 `try` 里。⇒ **load 就算返回合法文档，`updatePreferences` 仍是桩 ⇒ `value()` 照样抛
+⇒ 同一个 catch ⇒ 同一句「设置读取或应用失败，保留当前设置」。** 只做 load 是**假修复**。
+
+### 三、契约（真实现必须回什么）
+
+- 信封：`{"ok":true,"value":{…}}`（`wire::ok_value` 已是这套，见既有 17 个真实现）。
+- `loadPreferences` 的 value：**`{revision: >=0 的整数, preferences: {…}}`**。
+  `revision` 缺失/负数直接抛（`PreferencesRevisionPolicy.read(accepted.opt("revision"), -1)`，
+  `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:2183`）；
+  `preferences` 是**严格** `getJSONObject`（同文件 `:2186`），但**给了 `{}` 就够**：
+  我逐行数过 `applyPreferencesSnapshot` 里对快照的取字段方式，**除 `preferences` 那一次之外
+  全是 `optBoolean/optJSONObject/strictInt(…, 默认值)`**，缺字段一律落宿主自带默认。
+- `updatePreferences` 的 value：`{view: {…}}`，`view` 用现成的 `build_view`（`qingshan/engine/src/lib.rs:427`）
+  就能造 ⇒ 与候选长按五件同一套「ok:true + 原样 View」止血形态，**有先例、有用户裁定在前**。
+- `savePreferences(directory, expectedRevision, snapshot)`：宿主**传整份文档**，共 5 个调用点
+  （`:4912`、`:5075`、`:5497`、`:5641`、`:7312`）。⇒ 存储侧可以把文档**当不透明 JSON 原样存取**，
+  不需要在 Rust 里建模那几十个字。`expectedRevision` 是比较并交换（上游同语义）。
+- 数据来源：**不是** `runtime-options.json`，是宿主给的 `preferencesDirectory`
+  （`qingshan/host/java/app/msime/android/core/MSIMEInputService.java:1722` 赋值），
+  就是我们已经在写的 `files/` 之下——`engine/src/assemble.rs:60` 的 `DataPaths` 里加一个路径字段即可，
+  原子写 Core 侧已有 `write_atomic`（`session.rs:62` 注释里那条落盘路径就在用它）。
+- 上游参照：`msime-develop/crates/client-core/src/preferences.rs` —— **3,432 行**，
+  含文件锁、修订号 CAS、损坏修复、原子写、版本迁移、`Preferences` 全量建模。
+  **我们不需要照搬**，但"上游那份有多重"这件事本身就是范围证据。
+
+### 四、范围量级（按本仓既有真实现的体量校准：JNI 导出层 13–36 行，重活在 session/view/wire）
+
+| 切片 | 内容 | 估行（Rust，含 1–2 条单测） | 破 Java？ |
+|---|---|---|---|
+| 甲 | 只做 load | 40–55 | 否 |
+| 乙 | **load + update（止血形态）** | **85–110** | 否 |
+| 丙 | 乙 + save（修订号 CAS + 原子写）⇒ 设置**真能存住** | **145–175** | 否 |
+| 丁 | 丙 + default / restoreDefault（「恢复默认设置」那颗按钮） | 200–240 | 否 |
+
+⇒ **甲单独做是假修复（第二节已证）；乙是"消掉提示"的最小真实切片，已经踩在 100 行门槛上；
+丙才是把功能修好。** 按用户门槛，乙/丙都**不满足"< 100 行"**，所以本轮**只出方案不动手**。
+
+### 五、附带问题：做完解锁 D 路线吗？—— **解锁，而且是白送的**
+
+PIN 第 1411 行那条"D 挂到偏好读写 P1 之后"的判据本轮读准了：门是
+`qingshan/host/java/app/msime/android/core/MSIMEInputService.java:2221`
+
+```java
+        boolean nextCandidateGloss = preferences.optBoolean("candidate_english_gloss", true);
+```
+
+**默认值是 `true`**。今天它恒假，只是因为 `applyPreferencesSnapshot` 在 `:2260` 就抛了、
+永远走不到 `:2295` 的赋值（复位路径 `:1580` 把它写死 `false`）。
+⇒ **只要切片乙落地（load + update 都返回合法信封），`candidateEnglishGloss` 立刻变 true，
+D 路线的门自己开**，不需要额外实现。这条要在动手那天写进 README 的 D 待办里。
+
+### 六、建议的落地次序（等用户拍）
+
+1. 先拍**丙**（load + update + save，约 150–175 行）：一次把"提示消失 + 设置真存住"做完，
+   顺带白送 D 的门。分两步提交：先乙（消提示）、再 save（存设置），每步都能单独真机验收。
+2. **丁**（default / restoreDefault）另开一轮——它要一份"默认文档"，而那份文档的字段清单
+   只能从上游 `Preferences::default()` 抄，抄错就是静默改用户设置，风险与前三片不同级。
+3. 动手那轮必须带的对照验收：改前"提示 4 秒内候选行被隐藏"这一条要**复现一次再修一次**，
+   否则无法证明修的是它（上轮只读到规则，没量到 4 秒的现场）。
+
 ## 待办
 
 分发声明见仓库根的 `NOTICE.md`（上游与固定依据、GPL-3.0 §5a 修改清单、随包数据来源与许可、
@@ -3445,8 +3688,60 @@ Java 能成立的原因。`helpcodes/` 与日文那一组（`Bootstrap.java:246-
     变死代码，翻开关回退才是一行（按「可逆优先于删除」那条既有裁定）。
     `compileDebugJavaWithJavac` 退出码 0；**本轮未重打 APK ⇒ 真机未验**，
     下一轮出包时到关于页确认那三样确实不显示了。**）
-21. **新发现，未定位：横屏下候选条整条不显示**（2026-10-15 20:35 撞见，见环境陷阱第 47 条）。
+    **（现值 2026-10-16 00:06：真机三处全部验毕，本条正式关掉。** 23:05 `clean assembleDebug`
+    出包 49,897,529 B → 23:07 `install -r`（不 `pm clear`）→ 关于页两屏 `uiautomator dump --windows`：
+    顶部 `版本 0.2.0 · Android` 之后直接是 `设备信息`（药丸没了），滚到底那一屏也没有
+    「自动更新」「更新通道」两行；后台任务查 `dumpsys jobscheduler` 全量输出，
+    `app.qingshan.ime` 只命中 3 处（`TopAppTimer` / `ShrinkableDebits` / UID 表 `10695`），
+    **零条 `JobStatus`** ⇒ 每天一次的更新任务没排上。`engine/tools/verify_apk.py` 复跑
+    包内容=True 符号=True 清单=True。**）
+21. **横屏下候选条整条不显示：本轮复现不出来，降级为"未定位"**（2026-10-15 20:35 撞见，见环境陷阱第 47 条）。
     现象：`mCurrentOrientation=90` 时试用页键位正常、会话活着、`input text nihao` 后
     **候选面板一个节点都没有**；锁回竖屏立刻恢复。本轮为了做预检直接锁屏绕过了，
     **没查根因**（属宿主布局/测量还是 `onEvaluateInputViewShown` 那条硬件键盘分支，未知）。
     真机上横屏打字是常见场景，值得单独一轮：先确认是不是只有试用页这样，再看任何输入法的横屏表现。
+    **（现值 2026-10-16 00:14：单独一轮做完了，**这条没有结案，但也没有复现**。**
+    试用页横屏键位点击 10 条候选、系统设置搜索框横屏 10 条、竖屏两种探针 6 / 10 条
+    ⇒ **四格全部正常，横屏本身不坏**；读码也证实候选条可见性三行里**没有方向这一维**
+    （`qingshan/host/java/app/msime/android/core/MSIMEInputService.java:7818`/`:7832`/`:7836`），
+    全仓与上游都**没有 `layout-land`/`values-land`**。
+    **中途我犯过一次错**：先用一支写坏的计数器（`cls=='Button'` 等值比较，恒假）"证明"这是
+    `input text` 不建组合的假象，并把撤回写进了文档；改用 `endswith` 重跑后同一批操作
+    竖屏 6 条、横屏 10 条，**那个解释作废**（教训见环境陷阱第 48 条）。
+    20:35 那次的 0 候选**仍未定位**，两个没排除的差别：真实传感器旋转 vs 本轮 `cmd window` 强转、
+    以及预检脚本拿竖屏坐标表去点横屏键位。本条**保持打开**，等用户侧的复现口径
+    （哪个应用、转屏前还是转屏后打的字）。同一轮量到两条**真的**缺陷，另立第 22 条。**）
+    **（裁定 2026-10-16 00:41（用户）：不追，除非有可复现的操作序列。** 四格实测已证横屏本身不坏，
+    那次 0 候选最可能是"旋转重建会话"那一瞬的效应（见第 22 条 ①），继续追的成本是装一个上游对照包
+    （本机装不了，包名 + 证书双冲突），收益不明。⇒ **本条冻结**：不再单独立轮，
+    只有当用户给出**可复现的操作序列**（哪个应用、哪一步）时才重开。**）
+22. **旋转丢组合 + 偏好读取恒失败：两条从第 21 条那一轮量出来的真缺陷**（2026-10-16 00:14 立项，**本轮没改任何代码**）。
+    ① **旋转把组合冲掉**：竖屏组合中（preedit `nihao` 在、候选条在），锁到横屏之后
+    `tryout_field` 变成 `nihaonihao`（**字母原样进了输入框**）、preedit 节点消失、候选条没了；
+    截图 `a3bm/Y3-after-rot.png` 上那一行只剩诊断提示文字，连工具栏行也不在。
+    logcat 同一时刻出现一整条 `[msime_android::session] 会话建立 125 ms（含词库载入）`
+    ⇒ 旋转走了一次全新会话，组合上下文随之丢掉；`dumpsys window` 里 IME 窗口
+    `req=2400x794` → `2400x683`（差 111 px ≈ 标题行 34dp + 候选行 42dp）。
+    **口径声明**：这一轮"候选数从 7 掉到 0"那组数字**不算证据**（那支探针把招呼语气泡也数进去了，
+    见环境陷阱第 48 条），站得住的是"字段多出原样字母 + preedit 消失 + logcat 会话重建 + 截图"这四样。
+    **未定**：上游水杉是否同样重建会话（那段 Java 调用链是上游的，我们的改动只有
+    `options.put("application", …)` 那一行），
+    要定它得能装上游 APK 做对照，本机装不了（包名冲突 + 证书不同）。
+    ② **偏好读取恒失败**：键盘上那句 `设置读取或应用失败，保留当前设置` 每次必出，源头是
+    `loadPreferencesRaw` 还在 `qingshan/engine/src/stub.rs:100` 的 85 个占位里，回
+    `{"ok":false,"error":"not_implemented"}` ⇒ `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:2145`
+    的 `value()` 抛 `Shared runtime rejected operation` → `:2147` catch → `:2149` 置提示
+    （**机制 2026-10-16 更正过一次，上一版写的"`PreferencesReloader` 置 null"是错的**）。
+    它不只是难看：`hasDiagnostic` 一真就**同时**隐藏工具栏行与候选行
+    （同文件 `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:7818`、`:7832`、`:7836` 三行，
+    4 秒后自动恢复，见 `qingshan/host/java/app/msime/android/policy/InputDiagnosticPolicy.java:5`），
+    所以"候选条忽然整条不见"在**任何方向**都能发生。
+    **（现值 2026-10-16 00:41：`loadPreferences` 真实现已评估完，**本轮按"< 100 行才动手"的门槛判定不实现**。**
+    三个硬结论：① 偏好这条路上有**五个** native 全是桩（load / save / update / default / restoreDefault），
+    ② **只做 load 消不掉那句提示**——`applyPreferencesSnapshot` 自己在
+    `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:2260` 还要过一次
+    `updatePreferences`，照样抛、照样进同一个 catch；③ 切片估行：只 load 40–55 行（假修复）、
+    load+update 85–110 行、再加 save 145–175 行、再加 default/restoreDefault 200–240 行，
+    **全部不破 Java 零改动**。附带好消息：**load+update 一落地，
+    `candidate_english_gloss` 的默认 true 就会把 D 路线的门打开**（同文件 `:2221`/`:2295`，
+    今天恒假只是因为 `:2260` 先抛了）。方案与落地次序见「loadPreferences 真实现评估」一节，**等用户拍**。**）
