@@ -2,7 +2,8 @@
 """从 NativeClient.java 生成 engine/src/stub.rs。
 
 stub.rs 里是「非输入路径」的 native 方法占位实现，签名逐位对齐 Java 声明。
-真实现的 19 个（REAL 集合）由 src/lib.rs 手写，不在这张表里，避免重复符号。
+真实现的（REAL 集合，条数以那个集合本身为准，别在这里重述数字）由 src/lib.rs 手写，
+不在这张表里，避免重复符号。
 
 用法（在 engine/ 目录）：
     python -X utf8 tools/gen_stub.py
@@ -53,6 +54,13 @@ REAL = {
     # restoreDefault 与 default 仍留桩：前者要一份"默认文档"，那只能抄上游 Preferences::default()，
     # 抄错就是静默改用户设置；后者在宿主里零调用点。
     "savePreferencesRaw",
+    # 剪贴板共享存储切片 1：只做 load 与 capture（逻辑在 clipboard.rs）。
+    # remove / set_pinned / replace / clear 四个**故意**继续回 not_implemented——
+    # 尤其 clear，它保持拒绝才能让宿主那句每秒一次的 "Clipboard history clear refused"
+    # 继续出现，作为"写路径还没做"的现场证据。切片 2 一起做掉。
+    # 注意这是**一个**导出：宿主只有 mobileClipboardHistoryRaw 一个入口，六个操作靠
+    # 请求里的 action.operation 分派，不存在 loadClipboardHistoryRaw 这种符号。
+    "mobileClipboardHistoryRaw",
 }
 
 # Java 类型 -> JNI Rust 类型

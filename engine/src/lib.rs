@@ -9,26 +9,29 @@
 //! `LinkageError`。
 //!
 //! 分工：
-//! - 本文件：20 个真实现——输入路径的 8 个方法，加中/英模式切换 `setEnglishModeRaw`
+//! - 本文件：21 个真实现——输入路径的 8 个方法，加中/英模式切换 `setEnglishModeRaw`
 //!   （它被宿主的启动路径与中/英键硬解析，桩会让会话建不起来）、候选长按四件
 //!   `pinCandidateRaw` / `fixCandidatePositionRaw` / `clearCandidatePositionRaw` /
 //!   `selectEdgeRaw`（Core 无对应能力，回「原样 View + `handled:false`」止血）、
 //!   `removeCandidateRaw`（接 `Engine::forget`）、展开面板 `allCandidatesRaw`
 //!   与它唯一的写入口 `selectAnyCandidateRaw`，`refreshHostRaw`（比随包锁的长度，
-//!   让升级安装包能重新解包），以及偏好读写方案丙的三件：`loadPreferencesRaw` 读、
+//!   让升级安装包能重新解包），偏好读写方案丙的三件：`loadPreferencesRaw` 读、
 //!   `savePreferencesRaw` 写、`updatePreferencesRaw` 把快照画回界面
-//!   （三者必须成对，理由见 `preferences.rs`）。
+//!   （三者必须成对，理由见 `preferences.rs`），以及剪贴板共享存储的
+//!   `mobileClipboardHistoryRaw`（切片 1：只接 `load` 与 `capture`，
+//!   其余四个操作仍回 `not_implemented`）。
 //!   **计数以 `tools/gen_stub.py` 的 `REAL` 集合为准。**
-//! - `stub.rs`：其余 82 个，由 `tools/gen_stub.py` 从 Java 声明生成，回 `not_implemented`。
+//! - `stub.rs`：其余 81 个，由 `tools/gen_stub.py` 从 Java 声明生成，回 `not_implemented`。
 //! - `session.rs`：会话表 + 宿主游标；`keys.rs`：键码与命令号分派；`view.rs`：JSON 镜像；
 //!   `wire.rs`：信封与 `byte[]` 收发；`resources_lock.rs`：随包锁的解析与长度比对；
 //!   `preferences.rs`：偏好档的读写（原子写 + 等值 CAS）、应答体的字段要求与
-//!   `learning` 单向门。
+//!   `learning` 单向门；`clipboard.rs`：剪贴板历史档的读写与它的 at-rest 防护。
 //!
 //! panic 全部由 `wire` 里的 `with_env` 兜（`jni-0.22.4/src/env.rs:4801` 的 `catch_unwind`），
 //! 所以本文件的每个导出都不需要自己包 `catch_unwind`。
 
 mod assemble;
+mod clipboard;
 mod keys;
 mod logcat;
 mod preferences;
@@ -252,6 +255,26 @@ pub extern "system" fn Java_app_msime_android_NativeClient_savePreferencesRaw(
             wire::ok_value(&mut env, document)
         }
         preferences::Saved::Rejected(reason) => wire::fail(&mut env, reason),
+    }
+}
+
+/// 剪贴板共享存储（切片 1：`load` 与 `capture`）。宿主把**六个**操作打包成一份
+/// `{directory, action}` 请求从同一个入口递进来（`NativeClient.java:639` 只有一个
+/// `mobileClipboardHistoryRaw`，不存在按操作拆开的符号），分派在 `clipboard::handle`。
+/// 这里的 `directory` 是宿主自己的 `filesDir`（`MSIMEInputService.java:6799` 传的就是
+/// `files`），**不是**偏好那个 `bootstrap/state`；落盘 `<filesDir>/MSIME/clipboard_history.json`
+/// ——与上游同名同位置，因为 iOS / HarmonyOS / macOS 宿主读的是同一份档。
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_app_msime_android_NativeClient_mobileClipboardHistoryRaw(
+    mut env: EnvUnowned<'_>, _class: JObject<'_>, request: jbyteArray,
+) -> jbyteArray {
+    logcat::init();
+    let Some(body) = wire::read_text(&mut env, request) else {
+        return wire::fail(&mut env, "mobile_clipboard_request_unreadable");
+    };
+    match clipboard::handle(body.as_bytes()) {
+        clipboard::Reply::Ok(value) => wire::ok_value(&mut env, value),
+        clipboard::Reply::Fail(reason) => wire::fail(&mut env, reason),
     }
 }
 

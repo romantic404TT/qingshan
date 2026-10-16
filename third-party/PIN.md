@@ -3738,6 +3738,218 @@ applyPreferencesSnapshot:2346 → ClipboardHistoryStore.clearQuietly:96 → requ
 **体积**：APK 49,898,033 → **49,986,769 B**（+88,736）。`std::fs` 与
 `serde_json::to_vec_pretty` 是这一轮新链进来的代码。
 
+## 剪贴板存储真实现评估（2026-10-16 16:20–17:08，只读，代码净改动 0）
+
+**结论：本轮不实现。** 三条门槛（< 100 行 / 不破 Java 零改动 / 不涉隐私边界）里
+**"行数"这一条差得最远**，而且"隐私"这一条的答案是"不越界但必须自带一套 at-rest 防护，
+少了它比桩更糟"。⇒ 按任务书分支 ② 出方案等拍板。**Java 零改动这条是过的**（下面第 ④ 点）。
+
+### 一、全链路（逐条回源，行号本轮实测）
+
+| 段 | 位置 | 事实 |
+|---|---|---|
+| 桩 | `qingshan/engine/src/stub.rs:103` | 宏声明一条，回 `{"ok":false,"error":"not_implemented"}` |
+| Java 出口 | `qingshan/host/java/app/msime/android/core/NativeClient.java:242`（包装）与 `:639`（`native` 声明） | 入参一个 `byte[]` 请求文档，出参一个 `byte[]` 信封 |
+| 桥 | `qingshan/host/java/app/msime/android/clipboard/ClipboardHistoryStore.java:106-134` | 请求 `{"directory":<filesDir 绝对路径>,"action":{"operation":…,"text"?,"pinned"?,"replacement"?}}`；`:121` 用 `strictTrue(response.opt("ok"))` 判成败，**false 就抛** `IllegalStateException`（`:127`），成功返回 `value` 对象 |
+| 操作 | 同文件 `:35`/`:47`/`:59`/`:63`/`:73`/`:86` | `load` / `capture` / `remove` / `set_pinned` / `replace` / `clear` 六个，**没有第七个** |
+| 上游 C++ | `msime-develop/platforms/android/native/client_jni.cpp:333`，限长常量 `:136` = **524288 B** | 只做"限长 + 转调"，不校验内容 |
+| 上游 FFI | `msime-develop/crates/host-api/src/ffi/host.rs:1486-1583` | 六个分支各回什么形状，全在这 98 行里；目录必须**绝对路径**且 ≤ 16384（`:1499`）；落盘路径 `:1500` = `<directory>/MSIME/clipboard_history.json` |
+| 上游 store | `msime-develop/crates/client-core/src/clipboard.rs` **1,064 行**（实现约 428 + 测试约 636） | 规则全在这里，见下面第 ③ 点的清单 |
+| 面板 | `qingshan/host/java/app/msime/android/core/ImePanels.java:1287-1309` | `if (!cloud && s.clipboardHistoryEnabled)` 才 `load()`，且 `catch (IllegalStateException) { items = null; }` ⇒ **开关关着时面板根本不读**，开关开着读到桩也只是画一行提示 |
+| 捕获 | `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:5727-5756` | 三道门：`imePrivacyGate.allows(CLIPBOARD_HISTORY)`（`:5729`，隐私模式/密码框/不个性化学习的输入框全挡）、`capturesClipboard()`（`:5733`）、`clip.sensitive()`（`:5740`）；`catch (IllegalArgumentException \| IllegalStateException \| SecurityException)` ⇒ notice「无法保存当前剪贴板」 |
+
+**六个调用点全是软失败**（自吞或 catch 成 notice），**没有一个杀会话**。`scan_bridges.py` 的
+明细里搜不到 clipboard，因为它只扫 `MSIMEInputService.java` 里的 `NativeClient.` 直调，
+而剪贴板绕了 `ClipboardHistoryStore` 一层 ⇒ 属脚本口径外，本轮手工判的。
+
+### 二、五个明确评估的答复
+
+① **要 host/java 破例吗？不要，0 行。** 桥、信封、catch 都齐了，桩换成真的不需要动 Java。
+
+② **涉及隐私边界吗？判断不在我们这层，但防护在。** `clipboard_history` 的语义是
+「**是否允许记录**本机剪贴板历史」（不是"是否允许同步"——云同步是另一个门
+`ImePanels.cloudClipboardAllowed()`，被 `MSIMEInputService.java:7894` 一起传进策略），
+默认 **false**，且 `ClipboardHistoryRetentionPolicy.java:31-34` 承诺"关掉立即清空"。
+开关、敏感内容、隐私模式三道门**全在 Java 侧**（上游 mobile 入口自己**不查开关**，
+`msime-develop/crates/host-api/src/ffi/host.rs` 的 1486 到 1500 行里没有偏好读取）。
+⇒ 实现它**不越界**；但落盘那份是**明文剪贴板内容**，
+上游为它配了 owner-only 权限、symlink 拒绝、有界读、条数与字节上限
+（上游 `client-core/src/clipboard.rs` 的 `open_private_file_in`、`reject_symlink`、`write_private_file_at`、
+`:86` `read_bounded_file`、`:378` `validate_item_count`）。**少了这套防护的"简化版"
+比桩更糟**——桩不落盘，简化版会把明文写进一个可被同 UID 之外读到、或被 symlink 指走的文件。
+
+③ **范围多大？** 忠实移植要覆盖的规则清单：50 条上限（`:10`）、去重按内容不按行号
+（`:168`）、置顶优先 + 时间戳次之的排序（`:336`）、**单调时间戳**（`:345`，取 max(墙钟, 已有最大+1)）、
+legacy 字符串数组惰性升级（`:103`）、输入条数上限 5,000（`:12`）、历史字节上限（`:33`）、
+损坏文件保留不覆盖（`:93` 的 InvalidData 分支）、**读-改-写全程持锁**（`:163`/`:214`/`:229`/`:252`/`:295-301`
+的 `.lock` 侧车 + flock）、原子替换且**不删旧文件在先**（`:305-333`）。
+**锁不是可选项**：`:ime` 服务进程与 app 主进程**都写同一个文件**
+（`ClipboardSearchPage.java:107`/`:214`、`ClipboardEditPage.java:87`/`:167` 各自 new 一个 store，
+目录同为 `getFilesDir()`）。规模：**实现 300–360 行 + 测试 150–250 行**，
+另需**新增两个直接依赖**——flock 要 `libc` 或 `rustix`（现在只是传递依赖），
+grapheme 计数上限要 `unicode-segmentation`（`Cargo.lock` 实测只有 `unicode-ident`）
+⇒ 动 `Cargo.toml` 与 NOTICE 的第三方清单。**门槛 ① 直接不过（约 3 倍）。**
+
+④ **与 save 怎么对接？两份文件、两个根，不并档。** 偏好是
+`<filesDir>/bootstrap/state/preferences.json`（带 `revision` 与 CAS 的信封文档），
+剪贴板是 `<filesDir>/MSIME/clipboard_history.json`（**裸数组**，无 revision、无 CAS、靠 flock）。
+`preferences_directory` 与 `filesDir` 本身也不是同一个目录（前者多一段 `bootstrap/state`）⇒
+"开关在偏好里、内容在另一档"是上游的既定形状，我们没有选择余地。
+
+⑤ **做完刷屏是否必然消失？是——但先更正一处因果。** 任务书反问的"`clipboardHistory`
+现在是 null 吗"：**不是 null**，`MSIMEInputService.java:6799` 无条件
+`clipboardHistory = new ClipboardHistoryStore(files)`。每踩一次的**触发因**是
+`:2345` 的 `!clipboardHistoryEnabled`：开关默认 false、我们的偏好文档里也没有这个键
+⇒ 每 1 秒 LIVE 重载都判定"用户刚关掉历史"⇒ 执行"关闭即清空"的承诺 ⇒
+`clearQuietly()` ⇒ 桩回 `ok:false` ⇒ `ClipboardHistoryStore.java:127` 抛 ⇒
+`:99` 自吞并 `Log.w`。**桩是充分因，开关关着是触发因。**
+⇒ 做了存储刷屏会归零（`clear` 只要 `ok:true`，宿主连 `value` 都不读，见 `:86` 丢弃返回值），
+**但每秒一次的磁盘动作不会停**：只要开关还关着，每轮重载都会 open 锁文件 + flock + unlink 一次。
+这条要写进验收口径，否则下一轮会拿"还是有 IO"当新问题。
+
+### 三、三个切片与推荐
+
+- **甲：只把 `clear` 做真**（其余五个仍桩）。约 45–65 行 + 2–3 条单测，无新依赖，刷屏归零。
+  **不推荐，且理由不是"不够"**：它买到的只有"症状看不见"——把 logcat 里唯一那条
+  指向"剪贴板整条路是桩"的证据抹掉，面板照旧不可用。上一轮"只做 load 消不掉提示"是
+  **做了不够**，这一轮的甲是**做了会藏**，后者更贵。
+- **乙：忠实移植全量**。300–360 行实现 + 150–250 行测试 + 2 个新直接依赖 + NOTICE 第三方清单更新。
+  建议再切两半各自可验收：**乙-1 读路径**（`load` + `clear`，含锁与 0600 与有界读）、
+  **乙-2 写路径**（`capture` / `remove` / `set_pinned` / `replace`，含去重、排序、上限、legacy 升级）。
+- **丙：本轮什么都不做**，把刷屏继续按已知噪音记账（现状）。成本 0。
+
+**推荐顺序：丙 → 乙**（跳过甲）。乙至少是一个独立轮次，两半则是两个；开工前需要先拍
+"要不要为 flock 引入 `libc`/`rustix` 直接依赖"与"grapheme 上限是引 `unicode-segmentation`
+还是接受偏差并写明"这两条——它们都不是纯实现细节，一条动依赖政策、一条动与上游的保真度。
+
+### 四、这一轮顺带量到的两条真机事实（与剪贴板无关，但都是新证据）
+
+- **偏好文档的复杂度实测上去了**：切两次输入方案（全拼 → 手写 → 全拼）之后
+  `files/bootstrap/state/preferences.json` 的 `revision` 到 **4**，`preferences` 里已有
+  **6 个键**，含一个**嵌套对象** `touch_keyboard_schemes`（里面还有一个字符串数组 `enabled`）
+  ⇒ 上轮"整份文档当不透明 JSON 存"的决定在真机上被验证到需要支持嵌套与数组的程度。
+- **主页那行「已启用 · 手写」不跟随**：文件里 `selected` 已是 `quanpin`、键盘也确实回到 26 键，
+  主页与「输入」分组行仍显示"手写"（同一 Activity 从 15:41 活着没重建）。
+  **未定性**：可能是 app 侧只在创建时读一次（那就是设计），也可能是它读的是另一份缓存
+  （那就是缺陷）。本轮没追，只记事实与取证方法：`run-as … cat` 文件 vs 截图。
+- 上轮那条**未归因**的"输入框里出现整串 `{"ok":false,"error":"not_implemented"}`"：
+  本轮单独点 `手写` 入口两次（含面板开着时点、面板刚开就点）**都没重现**，编辑器仍空。
+  ⇒ 维持未归因，**不写进已知失效项**。要归因得先能重现，先记取证坐标：面板格心
+  实际是 row1 y≈1822 / row2 y≈1992（**不是**键位的 1845 / 1990，两者只差几十像素，
+  上轮就是在这里错位的）。
+
+## 剪贴板存储切片 1 落地（2026-10-16 19:03–20:35，读路径 `load` + `capture`）
+
+**一句话结论：读路径真机可用，但单独上线会新造一个隐私缺口——`clear` 还在切片 2 里，
+用户关掉开关之后明文历史留在盘上、而且在 UI 里删不掉。** 这是本轮最重要的产出，
+写在最前面。
+
+### 一、与任务书的三处偏差（都按上游/契约改，没有照抄）
+
+1. **任务书要"加两个导出 `loadClipboardHistoryRaw` / `captureClipboardHistoryRaw`"——不存在这两个符号。**
+   Java 侧只有一个 `NativeClient.java:639 private static native byte[] mobileClipboardHistoryRaw(byte[])`
+   （实测 `grep -c loadClipboardHistoryRaw` = 0），六个操作靠请求里的 `action.operation` 分派。
+   照它加会变成 104 个导出、`verify_symbols.py` 报"多余 2"、102 契约当场破。
+   ⇒ 实际是**一个**导出转真：REAL 20 → **21**，桩 82 → **81**。
+2. **响应体不是 `{items:[…]}` 也不是裸数组**，是 `{"entries":[{"text","timestampMs","pinned"}]}`——
+   宿主 `ClipboardHistoryStore.java:139` 读的就是 `optJSONArray("entries")`，
+   字段名由 `:145` 的 `strictString` / `:148` 的 `pinned` / `:152` 的 `timestampValue` 钉死。
+3. **capture 的拒收不是故障**：`{"captured":false,"reason":"invalid"}` 要回 `ok:true`。
+   宿主 `:53` 拿 `reason` 画提示；回 `ok:false` 会让 `:127` 抛，被 `:5755` catch 成
+   「无法保存当前剪贴板」——把"这条太长所以不存"报成"存储坏了"。
+
+### 二、实现清单与两处有意偏差
+
+`engine/src/clipboard.rs`（新建，落盘 `<directory>/MSIME/clipboard_history.json`）。
+移植的上游规则（逐条对得上行号）：50 条上限、按内容去重、置顶优先 + 时间新的在前排序、
+**单调时间戳**（墙钟与"已有最大 +1"取大）、legacy 裸字符串数组惰性升级、
+5,000 条输入的解码前封顶（visitor，解码前不是解码后）、历史字节上限（按 JSON 最坏 6 倍膨胀算）、
+条目字段 `deny_unknown_fields`、缺档 = 空表 / 坏档 = `Err`（**绝不**把坏档当空表读，
+否则下一次 capture 就把"读不出来"变成"用户的历史没了"）、
+写侧全程持 `<档名>.lock` 侧车排他锁（侧车**不删**，删了另一个进程会锁到另一个 inode）、
+原子落盘（同目录唯一暂存 → fsync → rename，失败时清暂存）。
+
+**两处有意偏差，写进代码注释也写在这里**：
+- **符号链接只拒"我们自己那一段"**（`MSIME` 目录、历史档、锁档），不逐级拒祖先。
+  上游靠一张 `msime_path_trust` 可信别名表放行 `/data` 这类系统链接，我们没有那张表；
+  严格逐级拒会在把 `/data/user` 做成链接的 ROM 上把整个功能打死。
+  Android 上 `filesDir` 是应用私有 0700，攻击者要先把链接放进这个目录——那时他也已经能读它了。
+- **请求解析不加 `deny_unknown_fields`**：宿主以后多带一个键不该让"读历史"整个失败。
+  （条目结构仍然加，那是落盘格式，要严格。）
+
+**锁为什么不能省**：`:ime` 服务进程与前台 app 主进程都写同一份
+（`ClipboardSearchPage.java:107`/`:214`、`ClipboardEditPage.java:87`/`:167` 各自 new store），
+读-改-写不持锁就会丢条目。Android 上 `std::fs::File::lock` 不支持 ⇒ `rustix::fs::flock`；
+主机单测走标准库那条分支（实测 1.96 的 `File::lock` 可用，探针跑过）。
+
+### 三、证伪：最初三条测试没锁住，补强后 9/9 全红
+
+第一轮 6 条变异里 **3 条没抓到东西**，都是同一类错误——**只在 `load` 上断言，而 `load` 会顺手兜住写侧的错**：
+
+| 把实现改坏 | 结果 |
+|---|---|
+| 写侧不去重（重复文字直接追加） | **第一版 0 条红**（读侧去重兜住了）⇒ 补"盘上只有两条"的断言后才红 |
+| 条数上限松成 51 | **第一版 0 条红**（读侧截断兜住了）⇒ 同上补断言后 2 条红 |
+| 固定条目也会被挤掉 | **第一版 0 条红**——**没有任何测试碰过 `pinned`**（本切片没有 `set_pinned`，只能手写一份带 pinned 的档进来）⇒ 补两条（全满挤未固定 / 全固定拒收）后才红 |
+| 坏档当空表读 | 第一版 0 条红（那条测试写的是语法就错的档，被解码前的 visitor 先挡住）⇒ 补"语法对但字段缺"一条后才红 |
+| legacy 分支读成空 / 绝对路径判据去掉 / 空白不拒 / 图素簇上限不算 / 未知操作回 ok | 各自 1 条红 ✔ |
+
+补强后 **9 个变异全部有测试变红**。测试 69 → **82**（本文件 13 条）。
+教训与前几轮同一句话：**"读的时候能兜住"不是"写的时候对了"**，断言要打在盘上。
+
+### 四、真机六证（`install -r` 未 `pm clear`，serial e1cdb946）
+
+1. 设置页「我的 → 隐私 → 剪贴板历史」打开 ⇒ `preferences.json` 里 `clipboard_history: true`、
+   `revision` 到 **5**（这条走的是上一轮的真 save 路，两个功能第一次串起来）。
+2. 在应用里选中「你好」→ 复制 ⇒ `files/MSIME/clipboard_history.json` 出现，62 B，
+   内容 `[{"text":"你好","timestampMs":1792153240895,"pinned":false}]`。
+3. `run-as ls -l` 显示该档与 `clipboard_history.json.lock` **都是 `-rw-------`**、owner `u0_a695`
+   ⇒ 0600 在真机上取到证（主机是 Windows，`#[cfg(unix)]` 那条分支本机测不到，只能这样验）。
+4. 键盘剪贴板面板：顶行 `本机 / 云端 / **1/50** / 搜索 / 清空`，卡片「你好 · 本机 · 2 分钟前」⇒ `load` 通。
+5. 点卡片 ⇒ 输入框 `你好你好` → `你好你好你好` ⇒ 粘贴通。
+6. 金路径同窗：点候选 → `你好`；重敲 + 空格 → `你好你好`；`FATAL EXCEPTION` **0 条**。
+
+**清理**：测完把开关关回 false（出厂态）、`run-as rm` 掉那份明文历史与锁档，
+`ls files/MSIME` 复验为空。设备留在 26 键全拼。
+
+### 五、隐私缺口（本片新造，不是继承）
+
+关掉开关之后实测：`clipboard_history: false`、`revision` 6，而
+`clipboard_history.json` **仍在、mtime 仍是复制那一刻、内容一字未变**。
+因为 `clear` 还在桩里 ⇒ 宿主 `MSIMEInputService.java:2345` 那句"关闭立即清空"被拒；
+而面板 `ImePanels.java:1305` 只在 `clipboardHistoryEnabled` 时才 `load` ⇒
+**用户既看不到也删不掉自己刚复制的明文**（`remove` 同样是桩）。
+切片 1 之前不落盘，所以这个洞**是这片新造的**。⇒ 两条出路（等拍板）：
+① 切片 2 与本片进同一个发布；② 把 `clear` 单独提前（约 15 行：持锁 + 删档 + `NotFound` 也算成功 +
+回 `{"cleared":true,"entries":[]}`），这样"关闭即清空"当场兑现，刷屏也当场归零。
+
+### 六、刷屏因果的第二次更正
+
+开关打开后静置 31 秒 **0 条**；把开关关掉，同一台机器同一份包 31 秒 **30 条**（全出自 pid 22743）。
+⇒ 上轮说的"根因是 `mobileClipboardHistoryRaw` 是桩"仍然对（那是**充分**因），
+但**触发因是开关关着**：`ClipboardHistoryRetentionPolicy.clearsHistory` 只在 LIVE 偏好明确为 false 时清空。
+所以"做完读路径刷屏会不会消失"这个问题的答案是：**会不会消失取决于开关，不取决于这片代码**。
+验收时如果只测"开关开着 + 0 条"就会把功劳记错地方。
+
+### 七、依赖与体积
+
+`Cargo.toml` 加三条：`unicode-segmentation`（普通依赖）、`libc`（`cfg(unix)`）、
+`rustix` + `features=["fs"]`（`cfg(target_os="android")`，与上游 `client-core` 的分法一致）。
+**锁里真正新增的只有 `unicode-segmentation` 一个包**（109 → 110）：`libc`/`rustix`/`errno`/`linux-raw-sys`
+本来就在锁里（`rustix` 经 `tempfile`、`libc` 经 `getrandom` 与 `memmap2`），本轮只是被真的链进 `.so`。
+NOTICE 的「运行时第三方组件」原来**只列 Java 侧、一个 Rust crate 都没列**（既有缺口），
+本轮补了一张直接依赖表（版本与许可证逐条从锁与 crate 源码核过）。
+APK 49,986,769 → **50,159,025 B（+172,256）**；`.so` 4,495,208 / 4,750,296 B（包内各少 8 B）。
+
+### 八、下一片
+
+切片 2 = `remove` / `set_pinned` / `replace` / `clear`（写路径与管理），
+上游对应 `msime-develop/crates/host-api/src/ffi/host.rs` 的 1506 到 1583 行四个分支，
+与上游那份 `crates/client-core/src/clipboard.rs` 的 `remove` / `set_pinned` / `replace`
+三个方法（192 到 282 行）。
+`replace` 是里面最重的（五种 `ReplaceOutcome`、合并取固定之或、原位不动）。
+建议把 `clear` 提到最前面单独做掉（见第五点的两条出路）。
+
 ## 待办
 
 分发声明见仓库根的 `NOTICE.md`（上游与固定依据、GPL-3.0 §5a 修改清单、随包数据来源与许可、
@@ -4127,3 +4339,30 @@ applyPreferencesSnapshot:2346 → ClipboardHistoryStore.clearQuietly:96 → requ
     ② 真要换只能**改写已有全部提交**（`filter-branch` / 交互式 rebase），属不可逆操作，
     必须等用户明确指令才动；而且历史一改，任何已 push 的远端都要强推——那是第二次不可逆，
     两件事得一起拍。**只要仓库还没公开，这件事就有的是时间。**
+24. **剪贴板存储：评估完成，本轮按门槛判定不实现，等拍板**（2026-10-16 17:08 记，代码净改动 0）。
+    门槛三条里**"行数"差约 3 倍**（忠实移植 300–360 行实现 + 150–250 行测试），
+    **"Java 零改动"过了**（0 行破例），**"隐私"的答案是"不越界但必须自带 at-rest 防护"**：
+    开关、敏感内容、隐私模式三道门全在 Java 侧（`MSIMEInputService.java:5729`/`:5733`/`:5740`），
+    native 不判断；但落盘是**明文剪贴板**，上游为它配了 0600、symlink 拒绝、有界读、
+    条数与字节上限——**简化版少了这套就比桩更糟**。
+    **要拍的三件事**：① 走不走"丙 → 乙"（跳过只消症状的甲）；② 为 flock 引入 `libc`/`rustix`
+    直接依赖（现在只是传递依赖）；③ grapheme 上限是引 `unicode-segmentation` 还是接受偏差并写明。
+    ②③ 都不是纯实现细节：一条动依赖政策与 NOTICE 第三方清单，一条动与上游的保真度。
+    另需知道：做了存储之后**刷屏归零但每秒一次的磁盘动作不会停**（开关关着 ⇒
+    `:2345` 每轮重载都执行"关闭即清空"），别把这条 IO 当新问题。全文见「剪贴板存储真实现评估」一节。
+    **（现值 2026-10-16 20:40：用户拍板"做，按乙切片分轮"，切片 1（`load` + `capture`）已落地、
+    真机验过、已提交**；② ③ 两条依赖问题随之拍定（`libc` + `rustix` + `unicode-segmentation` 全批准，
+    实测锁里真正新增的只有 `unicode-segmentation` 一个包）。
+    上面那句"刷屏归零"要按实测改口：**归零的是开关打开的那段时间**（31 秒 0 条），
+    关掉之后同一份包 31 秒又是 30 条 ⇒ 消失与否取决于开关，不取决于这片代码。
+    **剩一件事要拍**：`clear` 在切片 2 里 ⇒ 用户关掉开关后明文历史留在盘上、UI 里也删不掉
+    （实测 `clipboard_history:false` + `revision` 6 之后档仍在、mtime 未变、内容一字未改）。
+    出路二选一：**甲 切片 2 与本片进同一个发布**；**乙 把 `clear` 提前单独做掉**（约 15 行：
+    持锁 + 删档 + `NotFound` 算成功 + 回 `{"cleared":true,"entries":[]}`）。
+    **推荐乙**——它最小，而且能把"切片之间"这个窗口关掉。全过程见「剪贴板存储切片 1 落地」一节。**）
+25. **剪贴板切片 2 = 写路径与管理（`remove` / `set_pinned` / `replace` / `clear`）**（2026-10-16 20:40 立项）：
+    上游对应 `msime-develop/crates/host-api/src/ffi/host.rs` 的 1506 到 1583 行四个分支，与
+    `clipboard.rs` 的 `remove` / `set_pinned` / `replace` 三个方法（192 到 282 行）。
+    `replace` 最重：五种 `ReplaceOutcome`（Replaced / Merged / Unchanged / NotFound / Invalid）、
+    合并时固定状态取两者之或、改完留在原位**不**跳到最前。
+    **做完这片，刷屏才真正与开关无关地归零，待办第 24 条那个隐私窗口才关得上。**

@@ -24,6 +24,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tracing = "0.1"
+# 剪贴板历史的移动端上限：Apple 的 Character 数按图素簇算，不是按 char 也不是按字节。
+# 上游同一个规则用的也是它（`clipboard.rs:367` 的 graphemes）。
+unicode-segmentation = "1"
 
 # 3.4：青简 Core 六件套，path 依赖指向上游工作区的成员 crate。
 # 这六个的闭包实测只有 ferrous-opencc / foldhash / jiff / memmap2 / serde / serde_json /
@@ -36,6 +39,17 @@ qingjian-format = { path = "../../qingjian/crates/qingjian-format" }
 qingjian-learning = { path = "../../qingjian/crates/qingjian-learning" }
 qingjian-lm = { path = "../../qingjian/crates/qingjian-lm" }
 qingjian-translate = { path = "../../qingjian/crates/qingjian-translate" }
+
+# 剪贴板共享档的 at-rest 防护：`O_NOFOLLOW` / `O_CLOEXEC` / `0o600` 这三个常量与
+# `symlink_metadata` 的判据都要 libc。上游 client-core 也是这么分的（它的
+# `[target.'cfg(unix)'.dependencies]` 里同时有 libc 与 rustix）。
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# 锁：Android 上 `std::fs::File::lock` 不支持（上游 `file_lock.rs:1` 的注释就是这件事），
+# 只有这个目标要 rustix 的 flock。主机侧单测走标准库那条分支。
+[target.'cfg(target_os = "android")'.dependencies]
+rustix = { version = "1", features = ["fs"] }
 
 [profile.release]
 opt-level = 3

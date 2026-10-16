@@ -145,7 +145,7 @@ README"——后者已在当天 18:19–18:20 出过并验过第一个发布包�
 不含第三方内容。
 
 本项目**不打包**水杉的日文词库（Mozc / IPAdic）、英文 SCOWL 词表、语言词库与离线释义——
-那些资源随上游各自的锁文件按需下载，而其 native 入口在本项目属于 **82 个** `not_implemented` 桩（102 个导出减去真实现的 20 个；计数口径 = `engine/tools/gen_stub.py` 的 `REAL` 集合，2026-10-16 16:05 实测 20 + 82 = 102），
+那些资源随上游各自的锁文件按需下载，而其 native 入口在本项目属于 **81 个** `not_implemented` 桩（102 个导出减去真实现的 21 个；计数口径 = `engine/tools/gen_stub.py` 的 `REAL` 集合，2026-10-16 20:40 实测 21 + 81 = 102），
 因此相应分发义务不落在本包内（见 `README.md` 已知失效项第 1 条）。
 
 ## 运行时第三方组件
@@ -160,3 +160,27 @@ Google Play services / Firebase 传输组件。
 各组件按**自己的**许可证分发，不由 GPL 覆盖；上游清单以水杉 `docs/third-party.md` 为准，其中手写识别
 那一项与水杉 README `:138` 的说法一致：**Google ML Kit 按其服务条款授权，不是开源许可证**。
 本项目没有修改这些库的任何源码，只是按坐标链接。
+
+### Rust 侧（链接进 `libmsime_android.so` 的 crate）
+
+**本节 2026-10-16 才补上**：上面那段"运行时第三方组件"此前只覆盖 Gradle/Java 一侧，
+`.so` 里链接的 Rust crate 一个都没列——这是这份声明的一个既有缺口，不是本轮改动造成的，
+本轮只是把它补住。`engine/Cargo.toml` 直接声明的八个，连同锁定的版本与各自许可证：
+
+| crate | 锁定版本 | 许可证 |
+|---|---|---|
+| `jni` | 0.22.4 | MIT OR Apache-2.0 |
+| `serde` | 1.0.229 | MIT OR Apache-2.0 |
+| `serde_json` | 1.0.152 | MIT OR Apache-2.0 |
+| `thiserror` | 2.0.21 | MIT OR Apache-2.0 |
+| `tracing` | 0.1.44 | MIT |
+| `libc`（仅 `cfg(unix)`，剪贴板档的 `O_NOFOLLOW` / `0o600` 常量） | 0.2.190 | MIT OR Apache-2.0 |
+| `rustix`（仅 `cfg(target_os = "android")`，剪贴板档的 flock） | 1.1.5 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
+| `unicode-segmentation`（剪贴板文字的图素簇上限） | 1.13.3 | MIT OR Apache-2.0 |
+
+再加青简 Core 的六个 path 依赖（`qingjian-core` / `-dictionary` / `-format` / `-learning` /
+`-lm` / `-translate`，许可证见 `LICENSE-QINGJIAN`）。**它们的传递闭包以 `engine/Cargo.lock` 为准**
+（实测 110 个包），本表不逐条重述——重述就会腐烂。2026-10-16 提直接依赖这一次，
+**锁里真正新增的只有 `unicode-segmentation` 一个包**：`libc` 与 `rustix`（以及只被 `rustix`
+拉进来的 `errno`、`linux-raw-sys`）本来就在锁里（`rustix` 经 `tempfile`、`libc` 经
+`getrandom` 与 `memmap2`），本轮只是从"在锁里但没链进 `.so`"变成"被我们的代码直接调用"。
