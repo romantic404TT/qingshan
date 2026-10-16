@@ -2,7 +2,7 @@
 //
 // 这些是非输入路径的 native 方法占位实现：签名逐位对齐 Java 声明，返回
 // {"ok":false,"error":"not_implemented"}，靠水杉 Java 自身的降级分支（fail()）失效。
-// 真实现的 17 个在 lib.rs，合计 102 个符号一个不能少。
+// 真实现的 19 个在 lib.rs，合计 102 个符号一个不能少。
 
 use jni::objects::JObject;
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jshortArray, jobject};
@@ -63,7 +63,7 @@ macro_rules! stub_boolean {
     };
 }
 
-// bytes 返回，77 个
+// bytes 返回，75 个
 stub_bytes! {
     Java_app_msime_android_NativeClient_accountSettingsApplyRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_accountSettingsExportRaw(jbyteArray _request);
@@ -97,7 +97,6 @@ stub_bytes! {
     Java_app_msime_android_NativeClient_hostCapabilitiesRaw(jbyteArray _platform);
     Java_app_msime_android_NativeClient_keySoundPackRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_keyboardSkinTrialRaw(jbyteArray _request);
-    Java_app_msime_android_NativeClient_loadPreferencesRaw(jbyteArray _directory);
     Java_app_msime_android_NativeClient_localSpeechAcceptRaw(jlong _handle, jshortArray _pcm, jint _count);
     Java_app_msime_android_NativeClient_localSpeechFinishRaw(jlong _handle);
     Java_app_msime_android_NativeClient_localSpeechStartRaw(jlong _handle, jbyteArray _model, jbyteArray _language, jbyteArray _hotwords, jint _threads);
@@ -138,7 +137,6 @@ stub_bytes! {
     Java_app_msime_android_NativeClient_telemetryFlushRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_themeCatalogRaw();
     Java_app_msime_android_NativeClient_typingStatisticsRaw(jbyteArray _request);
-    Java_app_msime_android_NativeClient_updatePreferencesRaw(jlong _session, jbyteArray _snapshot);
     Java_app_msime_android_NativeClient_vocabularyReviewRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_voiceHotwordCorrectRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_voiceHotwordsRaw(jbyteArray _request);

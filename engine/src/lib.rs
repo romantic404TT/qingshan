@@ -9,16 +9,19 @@
 //! `LinkageError`。
 //!
 //! 分工：
-//! - 本文件：17 个真实现——输入路径的 8 个方法，加中/英模式切换 `setEnglishModeRaw`
+//! - 本文件：19 个真实现——输入路径的 8 个方法，加中/英模式切换 `setEnglishModeRaw`
 //!   （它被宿主的启动路径与中/英键硬解析，桩会让会话建不起来）、候选长按四件
 //!   `pinCandidateRaw` / `fixCandidatePositionRaw` / `clearCandidatePositionRaw` /
 //!   `selectEdgeRaw`（Core 无对应能力，回「原样 View + `handled:false`」止血）、
 //!   `removeCandidateRaw`（接 `Engine::forget`）、展开面板 `allCandidatesRaw`
-//!   与它唯一的写入口 `selectAnyCandidateRaw`，以及 `refreshHostRaw`（比随包锁的长度，
-//!   让升级安装包能重新解包）。**计数以 `tools/gen_stub.py` 的 `REAL` 集合为准。**
-//! - `stub.rs`：其余 85 个，由 `tools/gen_stub.py` 从 Java 声明生成，回 `not_implemented`。
+//!   与它唯一的写入口 `selectAnyCandidateRaw`，`refreshHostRaw`（比随包锁的长度，
+//!   让升级安装包能重新解包），以及偏好读写方案丙第一步的 `loadPreferencesRaw` 与
+//!   `updatePreferencesRaw`（两条必须成对，理由见 `preferences.rs`）。
+//!   **计数以 `tools/gen_stub.py` 的 `REAL` 集合为准。**
+//! - `stub.rs`：其余 83 个，由 `tools/gen_stub.py` 从 Java 声明生成，回 `not_implemented`。
 //! - `session.rs`：会话表 + 宿主游标；`keys.rs`：键码与命令号分派；`view.rs`：JSON 镜像；
-//!   `wire.rs`：信封与 `byte[]` 收发；`resources_lock.rs`：随包锁的解析与长度比对。
+//!   `wire.rs`：信封与 `byte[]` 收发；`resources_lock.rs`：随包锁的解析与长度比对；
+//!   `preferences.rs`：偏好应答体的字段要求与 `learning` 单向门。
 //!
 //! panic 全部由 `wire` 里的 `with_env` 兜（`jni-0.22.4/src/env.rs:4801` 的 `catch_unwind`），
 //! 所以本文件的每个导出都不需要自己包 `catch_unwind`。
@@ -26,6 +29,7 @@
 mod assemble;
 mod keys;
 mod logcat;
+mod preferences;
 mod resources_lock;
 mod session;
 mod view;
@@ -189,6 +193,52 @@ pub extern "system" fn Java_app_msime_android_NativeClient_setEnglishModeRaw(
     match built {
         Some(view) => match serde_json::to_value(view) {
             Ok(value) => wire::ok_value(&mut env, value),
+            Err(error) => wire::fail(&mut env, &format!("encode_failed: {error}")),
+        },
+        None => wire::not_implemented(&mut env),
+    }
+}
+
+/// 方案丙第一步的两条偏好桥之一。宿主每个会话生命周期都会经
+/// `PreferencesReloader` 反复读它（`MSIMEInputService.java:1223` 起，1 秒一轮），
+/// 桩回 `ok:false` 时 `value()`（`:844`）必抛 ⇒ 键盘上永久挂着「设置读取或应用失败」。
+/// 信封与字段要求都在 `preferences.rs`，那边走单测。
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_app_msime_android_NativeClient_loadPreferencesRaw(
+    mut env: EnvUnowned<'_>, _class: JObject<'_>, _directory: jbyteArray,
+) -> jbyteArray {
+    // 这一条没有任何失败分支，所以不装日志桥（装了也是空转）：`load_document` 恒回 ok。
+    wire::ok_value(&mut env, preferences::load_document())
+}
+
+/// 把宿主送来的整份偏好快照应用到这个会话，并回一份完整 View。
+///
+/// 这一条是「只做 load 消不掉那句提示」的另一半：`applyPreferencesSnapshot` 自己在
+/// `MSIMEInputService.java:2260` 也要过一次 `value()`，`:2332` 硬取 `view`。
+/// 本引擎目前只消费快照里的 `preferences.learning`（与 `createRaw` 那半同一个字段），
+/// 其余偏好项由宿主自己应用（皮肤、字号、几何都在 Java 侧），所以这里不回 Transition。
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_app_msime_android_NativeClient_updatePreferencesRaw(
+    mut env: EnvUnowned<'_>, _class: JObject<'_>, session: jlong, snapshot: jbyteArray,
+) -> jbyteArray {
+    logcat::init();
+    let id = session as u64;
+    let Some(text) = wire::read_text(&mut env, snapshot) else {
+        return wire::not_implemented(&mut env);
+    };
+    let suppress_learning = preferences::wants_learning_off(&text);
+    let built = with_session(id, |state| {
+        if suppress_learning {
+            state.identity.learning_allowed = false;
+        }
+        build_view(state, id)
+    });
+    match built {
+        // 信封形态与 `viewRaw` **不同**：宿主在 `MSIMEInputService.java:2332` 读
+        // `value(...).getJSONObject("view")`，在 `:2387` 读 `strictBoolean(result, "deferred")`，
+        // 而 `strictBoolean` 对缺键也抛 ⇒ 两处都得给。字段要求集中在 `preferences::update_body`。
+        Some(view) => match serde_json::to_value(view) {
+            Ok(value) => wire::ok_value(&mut env, preferences::update_body(value, false)),
             Err(error) => wire::fail(&mut env, &format!("encode_failed: {error}")),
         },
         None => wire::not_implemented(&mut env),

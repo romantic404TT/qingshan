@@ -531,6 +531,11 @@ AGP 9.x 要求 Gradle 9.6+），升 AGP 会直接破坏构建。
     `force-stop` 把默认输入法绑走，这条是 `install -r` + 旋转把编辑器连接弄死，都是**连接态**问题不是代码问题）；
     ② 重绑用 `ime set` 换出去再换回来，**不要用 `am force-stop`**（第 21 条：那会把默认输入法整个切走）；
     ③ 一轮里 `install -r` 与旋转测试交替做之后，中间必须重绑一次再取基线，否则"改前/改后"两组数不可比。
+    **补一条（2026-10-16 13:29 又撞到，而且 `ime set` 换出去再换回来这次没救回来）**：
+    同一条重绑做完，键位仍全不响（字段停在 `打字试试`、候选 0、但键盘节点齐全）。
+    真正生效的是**重挂编辑器**：点 `收起键盘` → 点输入框 → **再点一次输入框**（第二次才把焦点坐实），
+    之后同样的操作立刻出 6 条候选。⇒ 复位顺序应当是 ①`ime set` 换出去再换回来 →
+    ②`收起键盘` + 连点输入框两次 → ③还不行才怀疑代码。这两步都不动应用数据，比重装便宜得多。
 51. **这个宿主的"严格读取"包含**缺键即抛**：接新 native 前要扫完整段消费代码，不能只看第一个 `getJSONObject`**（2026-10-16 03:14 实测，代价是一次真机返工）：
     我给 `updatePreferencesRaw` 写信封时照 `viewRaw` 的形态把 View 直接放进展位的 `value`，
     宿主 `MSIMEInputService.java:2332` 那句 `result.getJSONObject("view")` 确实满足了，
@@ -3580,6 +3585,64 @@ grep -rn "deferred" host/java --include=*.java
 - 想连噪音一起消掉的正解仍然是**第二步 save**：有了真存储，`clipboard_history` 才带得动真值。
 - **回退第一步**没必要了（副作用不伤功能，收益是真的）。
 
+## `deferred` 保真度修复：读完上游测试之后判定**不做**（2026-10-16 13:11，推翻我上一轮自己提的那条）
+
+上一轮我在 PIN 里把它写成"保真度缺口"，用户据此裁定"顺手补掉（约 2 行 + 1 单测）"。
+**这一轮把上游那段冒烟测试整段读完，结论反过来了：补了会更不诚实，所以没补。**
+证据如下，请以此为准覆盖上一轮那条建议。
+
+### 一、上游的 `deferred:true` 背后**真有一个队列**
+
+`msime-develop/platforms/android/tests/core/NativeSmoke.java:100-130` 整段读下来，那两条断言的次序是：
+
+```java
+            String queued = NativeClient.updatePreferences(handle, snapshot);
+            if (!queued.contains("\"deferred\":true")) throw new AssertionError(queued);
+            String committed = NativeClient.command(handle, 1);          // ← 提交，组词结束
+            String updated = NativeClient.updatePreferences(handle, snapshot);
+            if (!updated.contains("\"deferred\":false")) throw new AssertionError(updated);
+```
+
+前面还有一串 `character(handle, …)` 把组字留着（`:105-106`）。⇒ `deferred:true` 不是"我现在在组词"
+的**状态描述**，是一句**承诺**：runtime 把这份快照**存下了**，等这次组词结束再应用到引擎。
+第二次调用时组字已被命令 1 提交掉，所以当场生效、回 `false`。
+
+### 二、我们照抄这个值，就是在**说谎**
+
+我们的 `updatePreferencesRaw` 没有任何队列：它当场把唯一消费的 `learning` 落进会话，
+然后回当前 View（`qingshan/engine/src/lib.rs` 那一处、`preferences::update_body`）。
+把 `deferred` 改成 `!editing_text.is_empty()` 之后，宿主会怎么做是**读死的**：
+
+- `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:2387`
+  `preferencesNotice = strictBoolean(result, "deferred") ? " · 设置将在组词结束后应用" : "";`
+- `:7696` `String statusText = message + preferencesNotice + …`
+- `:7703` 把 `statusText` 写进表头那个 `status` 文本框
+- `:7812` 表头的可见条件是 `!heightMode && !hasDiagnostic && (!idle || modeLabel)`
+  ⇒ **只要 `!idle`（正在组词）表头就在**，而 `modeLabel` 只看 `message`、不看 `preferencesNotice`
+
+⇒ 后果是：**每一次组字的整个过程中，表头都挂着「设置将在组词结束后应用」**，
+而且偏好重载每 1 秒跑一遍、每秒重写一次这句。而组词结束后**什么都不会发生**。
+这不是补保真度，是往主输入界面上加一条假提示。
+
+### 三、更关键的一条：对我们唯一消费的那个字段，"推迟"方向是**反的**
+
+我们只消费 `preferences.learning`，而它是**关掉个性化学习**的隐私开关
+（Java 在 `learningSuppressed()` 为真时把它写成 false，见 `MSIMEInputService.java:2259`）。
+若真按上游做"组词结束后再应用"，效果就是**用户已经要求停止学习之后，继续多学几个键**。
+⇒ 对这个字段，**当场生效才是正确方向**，`deferred:false` 是实话。
+
+### 四、所以三条路里选丙，并把甲乙留给 save 那一轮
+
+| 路 | 内容 | 判定 |
+|---|---|---|
+| 甲 | 只改值：`deferred = !editing_text.is_empty()` | **不做**（第二节：造出假提示） |
+| 乙 | 把行为补真：会话里存快照、组词结束（`editing_text` 变空）时再应用 | 约 15–25 行 + 测试，**且对 `learning` 是负收益**（第三节）；等引擎真消费别的字段时再评估 |
+| 丙 | 保持 `deferred:false`，把理由写进代码注释与本节 | **本轮走这条** |
+
+⇒ 代码上只做一件事：在 `preferences::update_body` 的注释里把"`deferred` 为什么恒 false 是实话"写清楚，
+免得下一轮又有人（包括我自己）把它当缺口去"补"。**行为与值都没改**，所以
+`cargo test` 仍是 **63 passed**、`cargo fmt --check` 仍是 **19 hunk 全在 `lib.rs`**（本轮实测，见下）。
+
 ## 待办
 
 分发声明见仓库根的 `NOTICE.md`（上游与固定依据、GPL-3.0 §5a 修改清单、随包数据来源与许可、
@@ -3931,3 +3994,25 @@ grep -rn "deferred" host/java --include=*.java
     ⇒ 实际代价只是 logcat 刷屏 + 每秒一次异常构造。**因此推荐把第一步直接提交**，
     save 作为第二步按自己节奏排；上一轮我列的"甲：给文档写 `clipboard_history:true`"
     现在更不该做（为一个日志噪音去改隐私默认值）。完整判据见「`deferred` 语义判定」一节。**）
+    **（现值 2026-10-16 13:11：第一步已提交（第五个提交，hash 见本轮汇报）；那条"补 `deferred`
+    保真度"的裁定，读完上游测试之后**我判定不补**，理由与上一轮我自己提的建议相反，
+    见「`deferred` 保真度修复」一节——上游的 `deferred:true` 背后真有一个队列，
+    我们照抄值就是让表头每次组字都挂一句"组词结束后应用"的假话，而我们对唯一消费的
+    `learning`（关掉学习的隐私开关）当场生效才是正确方向。
+    副作用代价已实测降级为「logcat 刷屏 + 每秒一次异常对象构造」：`clearQuietly()` 自己吞异常、
+    那个 store 全程是桩（无数据可毁）、剪贴板面板实测不会被每秒关掉（点开 4 秒后
+    本机/云端/刷新 三个节点都还在）。**速率已量准：每秒恒定 2 条**——47 秒窗口里 92 条，
+    逐秒分布是 `2,2,2,…`，纯静置的最后 20 秒也是 40 条 = 2/s。
+    **成因不是轮询变快，是两个进程各跑一个 1 秒轮询**（`:ime` 服务进程 + 前台的 app 主进程，
+    上一轮探针就见过两个不同 pid 都在打 `loadPreferencesRaw`）⇒ 开着设置页时 2/s，
+    只有键盘活着时 1/s。上一轮那两个不一致的数（1.7/s 与 3.5/s）现在解释得通了：
+    取样窗口里混了"刚打完字"与"面板开着"，不是速率本身在抖。
+    **第二步 save 排下一轮**（约 60–80 行）：①消掉这条刷屏（有真存储才带得动
+    `clipboard_history` 真值）、②设置真存住。做那轮时再评估要不要真做"推迟应用"。**）
+23. **提交作者邮箱挂起，等用户拍板**（2026-10-16 13:11 记）：这台机器的全局 `git config`
+    把作者写成 `romantic404TT <2721890995@qq.com>`，本机 5 个提交全部带着它。
+    **仓库哪天公开，这个邮箱就永久留在历史里。** 用户裁定：暂不处理（仓库暂不公开，不急）。
+    ⇒ 两条约束：① **agent 不改 `git config`、不改任何提交作者**（本轮没碰，实测见汇报）；
+    ② 真要换只能**改写已有全部提交**（`filter-branch` / 交互式 rebase），属不可逆操作，
+    必须等用户明确指令才动；而且历史一改，任何已 push 的远端都要强推——那是第二次不可逆，
+    两件事得一起拍。**只要仓库还没公开，这件事就有的是时间。**

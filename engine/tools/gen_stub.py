@@ -2,7 +2,7 @@
 """从 NativeClient.java 生成 engine/src/stub.rs。
 
 stub.rs 里是「非输入路径」的 native 方法占位实现，签名逐位对齐 Java 声明。
-真实现的 17 个（REAL 集合）由 src/lib.rs 手写，不在这张表里，避免重复符号。
+真实现的 19 个（REAL 集合）由 src/lib.rs 手写，不在这张表里，避免重复符号。
 
 用法（在 engine/ 目录）：
     python -X utf8 tools/gen_stub.py
@@ -42,6 +42,12 @@ REAL = {
     # dictionary_outdated，宿主 Bootstrap.refreshExistingConfiguration 才会重新解包。
     # 逻辑在 resources_lock.rs（宿主可测），这里只是信封。
     "refreshHostRaw",
+    # 偏好读写方案丙第一步：load 回「修订号 0 + 空偏好」，update 应用 learning 并回完整 View。
+    # 两条必须成对——只做 load 消不掉那句提示，因为宿主 applyPreferencesSnapshot 自己还要
+    # 过一次 updatePreferences。逻辑在 preferences.rs，理由见那里的注释与 PIN 同名小节。
+    # save / restoreDefault / default 仍是桩（第二步与丁），default 在宿主里零调用点。
+    "loadPreferencesRaw",
+    "updatePreferencesRaw",
 }
 
 # Java 类型 -> JNI Rust 类型
