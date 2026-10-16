@@ -1,10 +1,10 @@
-//! 剪贴板历史的共享存储。宿主侧 `ClipboardHistoryStore.java:106-134` 把六个操作
+//! 剪贴板历史的共享存储。宿主侧 `ClipboardHistoryStore.java:104-135` 把六个操作
 //! 打包成一份 `{directory, action}` 请求递过来，这一层负责落盘与取回。
 //!
-//! **切片 1 只做 `load` 与 `capture`。** 其余四个（`remove` / `set_pinned` /
-//! `replace` / `clear`）继续回 `not_implemented`，与它们还是桩时逐字同形——
-//! 尤其 `clear` 保持拒绝，宿主那句每秒一次的
-//! `Clipboard history clear refused` 才会照旧出现（本轮验收要拿它当"写路径没做"的证据）。
+//! **六个操作全部是真实现**：`load` / `capture` / `remove` / `set_pinned` / `replace` /
+//! `clear`，没有一个还回 `not_implemented`。只有未知操作名回它，形状与当初的桩逐字同形。
+//! 开关关着时宿主每秒一次的 `clearQuietly()`（`MSIMEInputService.java:2345`）必须被
+//! `clear` 当幂等成功接下来，否则那句 `Clipboard history clear refused` 又会开始刷屏。
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
@@ -70,6 +70,24 @@ struct Action {
     /// 只有 `set_pinned` 带这个键（宿主 `ClipboardHistoryStore.java:113` 按操作名加）。
     /// 所以它是 `Option` 且**缺了就拒**——猜一个默认值等于凭空固定或凭空取消一条。
     pinned: Option<bool>,
+    /// 只有 `replace` 带。同样是"缺了就拒"：缺了新文字却去改，等于把条目改成空。
+    replacement: Option<String>,
+}
+
+/// 一次编辑的五种结局。上游同名枚举在 `client-core/src/clipboard.rs`，
+/// 这里只在本模块内用，但**取值一个不能少**：宿主要按它分四种提示文案。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Edit {
+    /// 改成了新文字，时间戳与固定状态都不动 ⇒ 它留在原来的位次上。
+    Replaced,
+    /// 新文字撞上另一条已有历史：两条并一条，留在**被编辑那条**的位置，固定状态取两者之或。
+    Merged,
+    /// 新文字与原文字相同：一个字节都不写。
+    Unchanged,
+    /// 原条目已经不在了（别的进程删过或清过）：幂等成功，不写盘。
+    NotFound,
+    /// 新文字不合规：不合规判定在**持锁之前**，所以连目录与锁侧车都不该出现。
+    Invalid,
 }
 
 /// 一个操作的结果：要么是一份 `value`（宿主 `:133` 取 `optJSONObject("value")`），
@@ -140,6 +158,29 @@ pub fn handle(request: &[u8]) -> Reply {
             (Err(reason), _) => Reply::Fail(reason),
             (_, None) => Reply::Fail("invalid_mobile_clipboard_request"),
         },
+        "replace" => match (
+            entry_text(envelope.action.text.as_deref()),
+            envelope.action.replacement.as_deref(),
+        ) {
+            (Ok(text), Some(replacement)) => match replace_entry(&path, text, replacement) {
+                Ok((outcome, entries)) => Reply::Ok(json!({
+                    // 宿主 `ClipboardHistoryStore.java:78-81` 先看 replaced 再看 merged：
+                    // replaced:true + merged:false 它弹「已保存」，true + true 弹「合并成了一条」，
+                    // false 才去读 reason。两个布尔**永远都在**，少一个就少判一种结局。
+                    "replaced": outcome != Edit::NotFound && outcome != Edit::Invalid,
+                    "merged": outcome == Edit::Merged,
+                    "reason": match outcome {
+                        Edit::NotFound => Some("not_found"),
+                        Edit::Invalid => Some("invalid"),
+                        _ => None,
+                    },
+                    "entries": entries_of(&entries)
+                })),
+                Err(_) => Reply::Fail("mobile_clipboard_replace_failed"),
+            },
+            (Err(reason), _) => Reply::Fail(reason),
+            (_, None) => Reply::Fail("invalid_mobile_clipboard_request"),
+        },
         "clear" => match clear_entries(&path) {
             Ok(()) => Reply::Ok(json!({ "cleared": true, "entries": [] })),
             Err(_) => Reply::Fail("mobile_clipboard_clear_failed"),
@@ -190,6 +231,39 @@ fn pin_entry(path: &Path, text: &str, pinned: bool) -> io::Result<(bool, Vec<Ent
         persist(path, &entries)?;
     }
     Ok((true, entries))
+}
+
+/// 把一条历史的文字改成 `replacement`。四种会写盘的写法之外，三种不写：
+/// `Invalid`（且**在持锁之前**判，所以连目录与锁侧车都不出现）、`Unchanged`、`NotFound`。
+/// "留在原位"不是靠跳过排序实现的，而是靠**不动时间戳**——`sort_entries` 之后它自然
+/// 还占原来那一格。合并时固定状态取两者之或，且活下来的是**被编辑那一条**的时间戳。
+fn replace_entry(path: &Path, text: &str, replacement: &str) -> io::Result<(Edit, Vec<Entry>)> {
+    if !mobile_text_is_valid(replacement) {
+        return Ok((Edit::Invalid, Vec::new()));
+    }
+    let _lock = lock_history(path)?;
+    let mut entries = load_entries(path)?;
+    let Some(index) = entries.iter().position(|entry| entry.text == text) else {
+        return Ok((Edit::NotFound, entries));
+    };
+    if text == replacement {
+        return Ok((Edit::Unchanged, entries));
+    }
+    let outcome = match entries.iter().position(|entry| entry.text == replacement) {
+        Some(duplicate) => {
+            entries[index].pinned |= entries[duplicate].pinned;
+            entries[index].text = replacement.to_owned();
+            entries.remove(duplicate);
+            Edit::Merged
+        }
+        None => {
+            entries[index].text = replacement.to_owned();
+            Edit::Replaced
+        }
+    };
+    sort_entries(&mut entries);
+    persist(path, &entries)?;
+    Ok((outcome, entries))
 }
 
 /// 清空历史。**没有档也算成功**（幂等）——宿主每 1 秒重载都会在开关关着时踩一次
@@ -833,16 +907,189 @@ mod tests {
     }
 
     #[test]
-    fn remove与set_pinned与未知操作仍回未实现() {
+    fn 未知操作仍回未实现() {
         let directory = sandbox("stubbed");
-        for operation in ["replace", "teleport"] {
-            let request = request_bytes(&directory, json!({ "operation": operation }));
-            let reason = match handle(&request) {
-                Reply::Fail(reason) => reason,
-                Reply::Ok(body) => panic!("{operation} 竟回了 ok:true：{body}"),
-            };
-            assert_eq!(reason, "not_implemented", "{operation} 应回未实现");
+        let reason = match handle(&request_bytes(
+            &directory,
+            json!({ "operation": "teleport" }),
+        )) {
+            Reply::Fail(reason) => reason,
+            Reply::Ok(body) => panic!("teleport 竟回了 ok:true：{body}"),
+        };
+        assert_eq!(reason, "not_implemented");
+    }
+
+    /// `replace` 的应答体两个布尔字段必须**永远都在**：宿主
+    /// `ClipboardHistoryStore.java:78-81` 先读 `replaced` 再读 `merged`，
+    /// 少一个字段就少判一种结局。
+    fn replace(directory: &Path, text: &str, replacement: &str) -> Value {
+        value_of(handle(&request_bytes(
+            directory,
+            json!({
+                "operation": "replace",
+                "text": text,
+                "replacement": replacement
+            }),
+        )))
+    }
+
+    fn stored_timestamps(directory: &Path) -> Vec<(String, u64, bool)> {
+        stored_entries(directory)
+            .iter()
+            .map(|entry| (entry.text.clone(), entry.timestamp_ms, entry.pinned))
+            .collect()
+    }
+
+    #[test]
+    fn replace改内容后条目留在原位() {
+        let directory = sandbox("replace_basic");
+        capture(&directory, "甲");
+        capture(&directory, "乙");
+        capture(&directory, "丙");
+        let before = stored_timestamps(&directory);
+        let 乙的时间戳 = before
+            .iter()
+            .find(|(text, _, _)| text == "乙")
+            .expect("前提：乙在")
+            .1;
+        let body = replace(&directory, "乙", "乙改");
+        assert_eq!(body["replaced"], json!(true));
+        assert_eq!(body["merged"], json!(false));
+        assert_eq!(
+            texts(&body),
+            vec!["丙".to_owned(), "乙改".to_owned(), "甲".to_owned()],
+            "条数不变、只有内容换、顺序不换"
+        );
+        let after = stored_timestamps(&directory);
+        assert_eq!(after.len(), 3);
+        assert_eq!(
+            after
+                .iter()
+                .find(|(text, _, _)| text == "乙改")
+                .expect("乙改在盘上")
+                .1,
+            乙的时间戳,
+            "编辑不该让它跳到最前——它靠时间戳占位，改文字不动时间戳"
+        );
+    }
+
+    #[test]
+    fn replace成新内容与已有条目相同时合并并取固定的或() {
+        let directory = sandbox("replace_merge");
+        capture(&directory, "甲");
+        capture(&directory, "乙");
+        capture(&directory, "丙");
+        handle(&request_bytes(
+            &directory,
+            json!({ "operation": "set_pinned", "text": "乙", "pinned": true }),
+        ));
+        // 顺序：固定的乙在最前，其余按时间新的在前。
+        assert_eq!(
+            texts(&load(&directory)),
+            vec!["乙".to_owned(), "丙".to_owned(), "甲".to_owned()]
+        );
+        let 甲的时间戳 = stored_timestamps(&directory)
+            .iter()
+            .find(|(text, _, _)| text == "甲")
+            .expect("前提：甲在")
+            .1;
+        let body = replace(&directory, "甲", "乙");
+        assert_eq!(body["replaced"], json!(true));
+        assert_eq!(
+            body["merged"],
+            json!(true),
+            "撞上已有条目要说合并，宿主据此弹「合并成了一条」"
+        );
+        // 第三条（丙）是故意留的：合并后若只剩一条，"要不要重排序"根本观察不到。
+        assert_eq!(
+            texts(&body),
+            vec!["乙".to_owned(), "丙".to_owned()],
+            "合并完固定的那条还必须在最前——不重排序就会让丙插到它前面"
+        );
+        let after = stored_timestamps(&directory);
+        assert_eq!(after.len(), 2, "两条并一条");
+        assert_eq!(
+            after[0].1, 甲的时间戳,
+            "合并后留在被编辑那条的位置，不是活下来那条的位置"
+        );
+        assert!(
+            after[0].2,
+            "固定状态取两者之或：乙本来固定，合并后这条仍是固定的"
+        );
+    }
+
+    #[test]
+    fn replace成新内容与原内容相同时一字不改() {
+        // 60 条的档：多余的写会把它截成 50 条 ⇒ 字节比较测不出"没写盘"，这个能。
+        let directory = sandbox("replace_unchanged");
+        std::fs::create_dir_all(directory.join(STORAGE_DIRECTORY)).unwrap();
+        let path = history_path(&directory);
+        let many: Vec<Entry> = (0..MAX_ENTRIES + 10)
+            .map(|index| Entry {
+                text: format!("条目 {index:03}"),
+                timestamp_ms: 1_000 + index as u64,
+                pinned: false,
+            })
+            .collect();
+        std::fs::write(&path, serde_json::to_vec(&many).unwrap()).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let body = replace(&directory, "条目 059", "条目 059");
+        assert_eq!(body["replaced"], json!(true), "内容已经对了，算成功");
+        assert_eq!(body["merged"], json!(false));
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            before,
+            "Unchanged 也有一次写盘 ⇒ 60 条被截成 50 条"
+        );
+    }
+
+    #[test]
+    fn replace定位不到时幂等成功且不写盘() {
+        let directory = sandbox("replace_not_found");
+        capture(&directory, "在的一条");
+        let path = history_path(&directory);
+        let before = std::fs::read(&path).unwrap();
+        let body = replace(&directory, "早就没了的一条", "换成新的");
+        assert_eq!(body["replaced"], json!(false));
+        assert_eq!(body["merged"], json!(false));
+        assert_eq!(
+            body["reason"],
+            json!("not_found"),
+            "宿主据此弹「这条记录已经不在了」"
+        );
+        assert_eq!(texts(&body), vec!["在的一条".to_owned()]);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn replace的新内容不合规时连磁盘都不碰() {
+        // 上游把合规判定放在**持锁之前**（`client-core/src/clipboard.rs` 的 249 到 251 行），
+        // 所以一次非法编辑既不该建档、也不该建锁侧车。
+        let directory = sandbox("replace_invalid");
+        for replacement in ["", "   ", &"字".repeat(MAX_MOBILE_TEXT_CHARACTERS + 1)] {
+            let body = replace(&directory, "不存在也无所谓", replacement);
+            assert_eq!(body["replaced"], json!(false));
+            assert_eq!(body["reason"], json!("invalid"));
         }
+        assert!(
+            !directory.join(STORAGE_DIRECTORY).exists(),
+            "非法编辑不该创建 MSIME 目录或任何档"
+        );
+    }
+
+    #[test]
+    fn replace缺replacement字段算请求不合法() {
+        let directory = sandbox("replace_missing_field");
+        capture(&directory, "甲");
+        let reason = match handle(&request_bytes(
+            &directory,
+            json!({ "operation": "replace", "text": "甲" }),
+        )) {
+            Reply::Fail(reason) => reason,
+            Reply::Ok(body) => panic!("缺 replacement 竟回了 ok:true：{body}"),
+        };
+        assert_eq!(reason, "invalid_mobile_clipboard_request");
+        assert_eq!(texts(&load(&directory)), vec!["甲".to_owned()]);
     }
 
     #[test]
