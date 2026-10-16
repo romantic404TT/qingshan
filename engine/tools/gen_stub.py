@@ -48,6 +48,11 @@ REAL = {
     # save / restoreDefault / default 仍是桩（第二步与丁），default 在宿主里零调用点。
     "loadPreferencesRaw",
     "updatePreferencesRaw",
+    # 方案丙第二步：真落盘。原子写（同目录 tmp + rename）+ 等值 CAS，
+    # 语义逐条对齐上游 save_locked（client-core/src/preferences.rs:2993-3047）。
+    # restoreDefault 与 default 仍留桩：前者要一份"默认文档"，那只能抄上游 Preferences::default()，
+    # 抄错就是静默改用户设置；后者在宿主里零调用点。
+    "savePreferencesRaw",
 }
 
 # Java 类型 -> JNI Rust 类型

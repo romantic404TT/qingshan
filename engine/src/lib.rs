@@ -9,19 +9,21 @@
 //! `LinkageError`。
 //!
 //! 分工：
-//! - 本文件：19 个真实现——输入路径的 8 个方法，加中/英模式切换 `setEnglishModeRaw`
+//! - 本文件：20 个真实现——输入路径的 8 个方法，加中/英模式切换 `setEnglishModeRaw`
 //!   （它被宿主的启动路径与中/英键硬解析，桩会让会话建不起来）、候选长按四件
 //!   `pinCandidateRaw` / `fixCandidatePositionRaw` / `clearCandidatePositionRaw` /
 //!   `selectEdgeRaw`（Core 无对应能力，回「原样 View + `handled:false`」止血）、
 //!   `removeCandidateRaw`（接 `Engine::forget`）、展开面板 `allCandidatesRaw`
 //!   与它唯一的写入口 `selectAnyCandidateRaw`，`refreshHostRaw`（比随包锁的长度，
-//!   让升级安装包能重新解包），以及偏好读写方案丙第一步的 `loadPreferencesRaw` 与
-//!   `updatePreferencesRaw`（两条必须成对，理由见 `preferences.rs`）。
+//!   让升级安装包能重新解包），以及偏好读写方案丙的三件：`loadPreferencesRaw` 读、
+//!   `savePreferencesRaw` 写、`updatePreferencesRaw` 把快照画回界面
+//!   （三者必须成对，理由见 `preferences.rs`）。
 //!   **计数以 `tools/gen_stub.py` 的 `REAL` 集合为准。**
-//! - `stub.rs`：其余 83 个，由 `tools/gen_stub.py` 从 Java 声明生成，回 `not_implemented`。
+//! - `stub.rs`：其余 82 个，由 `tools/gen_stub.py` 从 Java 声明生成，回 `not_implemented`。
 //! - `session.rs`：会话表 + 宿主游标；`keys.rs`：键码与命令号分派；`view.rs`：JSON 镜像；
 //!   `wire.rs`：信封与 `byte[]` 收发；`resources_lock.rs`：随包锁的解析与长度比对；
-//!   `preferences.rs`：偏好应答体的字段要求与 `learning` 单向门。
+//!   `preferences.rs`：偏好档的读写（原子写 + 等值 CAS）、应答体的字段要求与
+//!   `learning` 单向门。
 //!
 //! panic 全部由 `wire` 里的 `with_env` 兜（`jni-0.22.4/src/env.rs:4801` 的 `catch_unwind`），
 //! 所以本文件的每个导出都不需要自己包 `catch_unwind`。
@@ -202,13 +204,55 @@ pub extern "system" fn Java_app_msime_android_NativeClient_setEnglishModeRaw(
 /// 方案丙第一步的两条偏好桥之一。宿主每个会话生命周期都会经
 /// `PreferencesReloader` 反复读它（`MSIMEInputService.java:1223` 起，1 秒一轮），
 /// 桩回 `ok:false` 时 `value()`（`:844`）必抛 ⇒ 键盘上永久挂着「设置读取或应用失败」。
-/// 信封与字段要求都在 `preferences.rs`，那边走单测。
+/// 第二步之后它**真读盘**：`<preferences_directory>/preferences.json`。
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_app_msime_android_NativeClient_loadPreferencesRaw(
-    mut env: EnvUnowned<'_>, _class: JObject<'_>, _directory: jbyteArray,
+    mut env: EnvUnowned<'_>, _class: JObject<'_>, directory: jbyteArray,
 ) -> jbyteArray {
-    // 这一条没有任何失败分支，所以不装日志桥（装了也是空转）：`load_document` 恒回 ok。
-    wire::ok_value(&mut env, preferences::load_document())
+    // 这一条有失败分支（坏文件要回 ok:false），所以日志桥要在这里也装一次，
+    // 否则 `wire::fail` 的 warn 是静默 no-op（环境陷阱里 refreshHostRaw 那条同因）。
+    logcat::init();
+    // 目录读不出来时仍回默认文档：那说明宿主还没走到写 `preferences_directory` 那步
+    // （`MSIMEInputService.java:1720` 之前），不是盘上有东西坏了。
+    let Some(path) = wire::read_text(&mut env, directory) else {
+        return wire::ok_value(&mut env, preferences::load_document());
+    };
+    match preferences::load(Path::new(&path)) {
+        preferences::Loaded::Document(document) => wire::ok_value(&mut env, document),
+        preferences::Loaded::Default => wire::ok_value(&mut env, preferences::load_document()),
+        // 坏文件**不能**回 ok:true + 默认值：那会让下一轮 save 把事故现场直接覆盖掉。
+        preferences::Loaded::Unreadable => wire::fail(&mut env, "preferences_unreadable"),
+    }
+}
+
+/// 偏好落盘（方案丙第二步）。宿主在 5 个地方调它（`:4912`、`:5075`、`:5497`、`:5641`、`:7312`），
+/// 传的是**整份快照**（`pending = new JSONObject(preferencesSnapshot.toString())`，`:4868`）
+/// 加它读到的修订号，所以 `value` 必须回一份宿主能直接喂给 `applyPreferencesSnapshot` 的文档
+/// ——它随后就读 `value.revision`（`:4970`）与 `value.preferences`（`:4975` 那条路径）。
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_app_msime_android_NativeClient_savePreferencesRaw(
+    mut env: EnvUnowned<'_>, _class: JObject<'_>, directory: jbyteArray,
+    expected_revision: jlong, snapshot: jbyteArray,
+) -> jbyteArray {
+    logcat::init();
+    let (Some(path), Some(body)) = (
+        wire::read_text(&mut env, directory),
+        wire::read_text(&mut env, snapshot),
+    ) else {
+        return wire::fail(&mut env, "preferences_arguments_unreadable");
+    };
+    if expected_revision < 0 {
+        return wire::fail(&mut env, "negative_expected_revision");
+    }
+    match preferences::save(Path::new(&path), expected_revision as u64, body.as_bytes()) {
+        preferences::Saved::Applied(document) | preferences::Saved::Conflict(document) => {
+            // 冲突回 ok:true + **当前那份**，不是回失败：宿主本来就有这一支
+            // （`PreferencesSavePolicy.shouldApplyResponse` 判"有更新的读盘赢了这场竞赛"，
+            // 然后只提示「设置已更新」）。回 ok:false 会把一次良性的竞赛报成「保存失败，保留原设置」。
+            wire::ok_value(&mut env, document)
+        }
+        preferences::Saved::Rejected(reason) => wire::fail(&mut env, reason),
+    }
 }
 
 /// 把宿主送来的整份偏好快照应用到这个会话，并回一份完整 View。

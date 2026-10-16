@@ -548,6 +548,15 @@ AGP 9.x 要求 Gradle 9.6+），升 AGP 会直接破坏构建。
     （`awk 'NR>=起 && NR<=止' … | grep -nE "getJSONObject|getString|getInt|strictBoolean\(|strictOr\("`），
     并把扫出来的**每一个键**写成一条单测断言（本轮补的 `应答体给齐update那两处严格读取` 就是这条锁，
     临时抽掉 `deferred` 它当场红）。**同一条也解释了为什么"能编译、能返回 ok"不等于"契约对上了"。**
+52. **验收用的 logcat tag 要先证伪，否则"0 条"是过滤器给的，不是现场给的**（2026-10-16 15:43 实测）：
+    任务书让我用 `adb logcat -d -s qingshan:V | grep -c "Clipboard history clear refused"` 验收
+    "剪贴板刷屏消失"。这条命令**恒为 0**——`qingshan` 是我们 Rust 侧日志桥自己那个 tag
+    （`engine/src/logcat.rs`），而刷屏那行是宿主打的，tag 是 `MSIMEClipboard`
+    （`ClipboardHistoryStore.java:24` `private static final String TAG = "MSIMEClipboard";`）。
+    真口径：`adb logcat -d | grep -c "Clipboard history clear refused"` → 同一窗口 **28 条**。
+    ⇒ 凡是"某条日志消失了 N 次 = 0"的验收，**先在改前那份日志上跑一遍同一条命令，
+    确认它能数出非 0**；数不出非 0 的过滤器等于没测。（PIN 第 7 条"空结果先证伪"的一个具体形态：
+    这次要证伪的不是设备，是**我手里的命令**。）
 
 ## 方案 A 实现与真机验收（2026-10-14 03:06–03:25）
 
@@ -3666,6 +3675,69 @@ grep -rn "deferred" host/java --include=*.java
 真正有效的是**点 `收起键盘` → 点输入框 → 再点一次输入框**（第二次才把焦点坐实）。
 已补进环境陷阱第 50 条。
 
+## loadPreferences 第二步 save 落地（2026-10-16 15:36–16:05，持久化真机验过；**剪贴板刷屏没消**）
+
+**做了什么**：`preferences.rs` 加 `save()` + `atomic_write()`（写 `preferences.json.tmp` 再
+`rename`），`lib.rs` 新增第 20 个真导出 `savePreferencesRaw`，`gen_stub.py` 的 `REAL` 加名后
+重生成 `stub.rs`（82 桩）。`restoreDefaultPreferencesRaw` 与 `defaultPreferencesRaw` **仍是桩**
+——前者要"把出厂默认写回去"，出厂默认这份东西我们还没有；后者宿主侧 **0 个调用点**。
+
+**与任务书的两处偏差（都按上游改，理由在代码注释里）**
+1. 任务书写"当前 revision **<** 快照 revision 才写"，上游 `save_locked`
+   （`msime-develop/crates/client-core/src/preferences.rs:2998`）要的是**等值** CAS：
+   `current != expected ⇒ Conflict`。跳号也算冲突——宿主读到的那份已经不是现在这份。
+   ⇒ 采等值。**并且这一条最初没有测试能判别**：把 `!=` 松成 `>` 全绿，
+   补了一条"当前 1、拿 expected=5 去写"才红。
+2. 任务书把写盘放在 `updatePreferencesRaw` 上，但它的 Java 签名
+   （`updatePreferencesRaw(long session, byte[] snapshot)`）**没有目录参数**，写不了文件。
+   真正带目录的是 `savePreferencesRaw(directory, expectedRevision, snapshot)` ⇒ 落在这一个。
+
+**持久化实测（OPPO PEGT10，`install -r` 未 `pm clear`）**
+- 触发方式：键盘工具栏 `青杉图标` → 更多工具面板 → 点 `繁体`（`ImeFunctionPanel.java:134`
+  → `toggleChineseOutput()` → `MSIMEInputService.java:5075` 的 `savePreferences`）。
+- 第一次写：`/data/user/0/app.qingshan.ime/files/bootstrap/state/preferences.json` **105 B**，
+  内容 `{format_version:1, preferences:{traditional_chinese_output:true}, revision:1}`。
+  `state/` 这个目录**是本轮才出现的**——此前没有任何 native 往里写过东西。
+- `am force-stop` + `ime set` 换回（新 pid 11147）后，面板上 `繁体` 仍是绿色勾选
+  ⇒ 值是真从盘上经 `loadPreferencesRaw` 读回来的，不是内存余温。
+- 再点一次 `繁体` 关：`revision` **1 → 2**、值回 `false` ⇒ 等值 CAS 在真机上按预期进位。
+- 两次写完 `ls -a` 都只有 `preferences.json`，**没有残留 `.tmp`** ⇒ `rename` 原子性成立。
+- 金路径同窗复验：点第 1 格 → `你好`；重敲 `nihao` + 空格 → `你好你好`；
+  `FATAL EXCEPTION` **0 条**、`仅直接输入` **0 条**；`not_implemented` 在这个窗口里
+  **全部**（307 条）属于 `MSIMEClipboard` 一个 tag。
+
+**任务书的前提被证伪：save 消不掉剪贴板刷屏。** 30 秒静置窗口 **28 条**（0.93/s），
+逐条都是 `Clipboard history clear refused: not_implemented`，栈固定为
+`PreferencesReloader.java:44 → MSIMEInputService.reloadPreferences:2146 →
+applyPreferencesSnapshot:2346 → ClipboardHistoryStore.clearQuietly:96 → request:120`。
+真正的源头是 **`mobileClipboardHistoryRaw` 还是桩**（`engine/src/stub.rs:103`）：
+`:2346` 在"偏好说开关关着"时顺手清空历史，桩回 `ok:false` →
+`ClipboardHistoryStore.java:127` 抛 `IllegalStateException` → `clearQuietly()` 自己吞掉并
+`Log.w`。⇒ 与"偏好有没有落盘"无关，**不硬修**，按任务书记成因。
+要消掉它只有两条路：把 `mobileClipboardHistoryRaw` 做真，或用户真去开 `clipboard_history`。
+
+**顺带纠正上一轮那条"每秒 2 条"的成因**：本轮 28 条**全出自同一个 pid 8623**（`:ime`），
+前台 app 主进程 29246 活着却没打。⇒ "两个进程各跑一个 1 秒轮询"这个解释在这台机器上
+**没复现**，实测是单进程 1/s。上一轮那个 92/47 s 的数不改（它是当时的实测），
+但"2/s 的机制"这一句要按本轮的数重测才能再用。
+
+**验证命令本身是个坑（已记环境陷阱 52）**：任务书给的
+`logcat -d -s qingshan:V | grep -c "Clipboard history clear refused"` **恒为 0**——
+这条日志的 tag 是 `MSIMEClipboard`（`ClipboardHistoryStore.java:24`），`qingshan:V` 只过滤
+我们 Rust 侧那一条。照它验收会把"刷屏原封不动"读成"刷屏已消失"。正确口径：
+`logcat -d | grep -c "Clipboard history clear refused"`。
+
+**两条新观测（未立项，只记事实）**
+- 更多工具面板里点 `中文标点` 会弹「标点状态未能同步到输入引擎」——它走 `setPunctuation`
+  （桩），**不落盘**。所以面板上那些勾只有 `繁体` 这一类真的写档。
+- 一次输入框里出现过整串 `{"ok":false,"error":"not_implemented"}`（43 个字符）。
+  我那组点击在"面板格"与"键位行"之间错位（面板第一行格心 y≈1822、第二行 y≈1992，
+  与键位 row1 y=1845、row2 y=1990 只差几十像素），**没能指认是哪个入口**，
+  之后单独点 `手写`、`词库` 各一次都没重现。⇒ 保持未归因，不当结论、不写进已知失效项。
+
+**体积**：APK 49,898,033 → **49,986,769 B**（+88,736）。`std::fs` 与
+`serde_json::to_vec_pretty` 是这一轮新链进来的代码。
+
 ## 待办
 
 分发声明见仓库根的 `NOTICE.md`（上游与固定依据、GPL-3.0 §5a 修改清单、随包数据来源与许可、
@@ -4032,6 +4104,22 @@ grep -rn "deferred" host/java --include=*.java
     取样窗口里混了"刚打完字"与"面板开着"，不是速率本身在抖。
     **第二步 save 排下一轮**（约 60–80 行）：①消掉这条刷屏（有真存储才带得动
     `clipboard_history` 真值）、②设置真存住。做那轮时再评估要不要真做"推迟应用"。**）
+    **（现值 2026-10-16 16:05：第二步 save 已落地并真机验过，这一条 ② 关闭、① 判为**预测错了**。**
+    ② **设置真存住 = 成立**：`state/preferences.json` 是本轮才出现的文件（此前那个目录都不存在），
+    点 `繁体` 写出 `revision:1`、`am force-stop` 换进程（新 pid 11147）后面板上 `繁体` 仍勾着
+    ⇒ 值是从盘上经 `loadPreferencesRaw` 读回来的；再点一次关 ⇒ `revision` 进位到 **2**。
+    ① **消掉刷屏 = 没做到，而且原理上做不到**：30 秒静置窗口 **28 条**（0.93/s），
+    栈固定在 `PreferencesReloader.java:44 → :2146 → :2346 → clearQuietly:96`，
+    源头是 **`mobileClipboardHistoryRaw` 还是桩**（`engine/src/stub.rs:103`），
+    跟"偏好有没有落盘"没有因果关系——上一轮那句"有真存储才带得动 `clipboard_history` 真值"
+    把两件事混成一件了：宿主读的是**偏好里的开关**，不是剪贴板存储本身；开关不写进档，
+    刷屏就一直在。⇒ 按任务书"未消就记成因、不硬修"处理，**不扩范围**去动那个桩。
+    顺带两条：本轮实测速率是**单 pid 1/s**，上一轮"两个进程各 1 秒轮询 ⇒ 2/s"的机制解释
+    在这台机器上没复现（旧数不改，但那句机制要重测才能再用）；验收命令
+    `logcat -s qingshan:V` 数不到这条（tag 是 `MSIMEClipboard`）⇒ 环境陷阱第 52 条。
+    `deferred` 按任务书第 3 条复评：**不改值**——save 是"当场写、下次读"，中间没有队列，
+    那个"再评估"的口子（引擎开始消费别的偏好项）没有被触发。全过程见
+    「loadPreferences 第二步 save 落地」一节。**）
 23. **提交作者邮箱挂起，等用户拍板**（2026-10-16 13:11 记）：这台机器的全局 `git config`
     把作者写成 `romantic404TT <2721890995@qq.com>`，本机 5 个提交全部带着它。
     **仓库哪天公开，这个邮箱就永久留在历史里。** 用户裁定：暂不处理（仓库暂不公开，不急）。
