@@ -113,7 +113,25 @@ pub fn handle(request: &[u8]) -> Reply {
                 Err(_) => Reply::Fail("mobile_clipboard_capture_failed"),
             }
         }
+        "clear" => match clear_entries(&path) {
+            Ok(()) => Reply::Ok(json!({ "cleared": true, "entries": [] })),
+            Err(_) => Reply::Fail("mobile_clipboard_clear_failed"),
+        },
         _ => Reply::Fail("not_implemented"),
+    }
+}
+
+/// 清空历史。**没有档也算成功**（幂等）——宿主每 1 秒重载都会在开关关着时踩一次
+/// `clearQuietly()`（`MSIMEInputService.java:2345`），第二、三次若回 `ok:false`，
+/// `ClipboardHistoryStore.java:127` 就抛、`:99` 自吞并打 warning，刷屏原样回来。
+/// 锁侧车刻意留在原地，理由见 `lock_path`。
+fn clear_entries(path: &Path) -> io::Result<()> {
+    let _lock = lock_history(path)?;
+    reject_symlink(path)?;
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
     }
 }
 
@@ -275,13 +293,19 @@ fn process_stamp() -> u128 {
 
 /// 写侧的排他锁。**跨进程**才有效，所以不能省：`:ime` 与前台 app 主进程各有一份 store。
 /// 锁档是侧车（`<档名>.lock`）且刻意不删——删了另一个进程就会在同一个路径上锁到另一个 inode。
+/// 锁侧车的路径：`<档名>.lock`。它**不随清空删除**——删了之后另一个进程
+/// 会在同一路径上锁到一个新 inode，两个写者就各自持有一把锁了。
+fn lock_path(path: &Path) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(".lock");
+    PathBuf::from(name)
+}
+
 fn lock_history(path: &Path) -> io::Result<File> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     create_directory_and_check(parent)?;
-    let mut lock_path = path.as_os_str().to_owned();
-    lock_path.push(".lock");
-    let lock = Path::new(&lock_path);
-    reject_symlink(lock)?;
+    let lock = lock_path(path);
+    reject_symlink(&lock)?;
     let mut options = OpenOptions::new();
     options.read(true).write(true).create(true).truncate(false);
     #[cfg(unix)]
@@ -738,9 +762,9 @@ mod tests {
     }
 
     #[test]
-    fn 其余四个操作与未知操作仍回未实现() {
+    fn 其余三个操作与未知操作仍回未实现() {
         let directory = sandbox("stubbed");
-        for operation in ["remove", "set_pinned", "replace", "clear", "teleport"] {
+        for operation in ["remove", "set_pinned", "replace", "teleport"] {
             let request = request_bytes(&directory, json!({ "operation": operation }));
             let reason = match handle(&request) {
                 Reply::Fail(reason) => reason,
@@ -748,6 +772,57 @@ mod tests {
             };
             assert_eq!(reason, "not_implemented", "{operation} 应回未实现");
         }
+    }
+
+    #[test]
+    fn clear之后档不存在且读回来是空表() {
+        let directory = sandbox("clear");
+        capture(&directory, "要被清掉的一条");
+        assert!(history_path(&directory).exists(), "前提：先要有一条");
+        let body = value_of(handle(&request_bytes(
+            &directory,
+            json!({ "operation": "clear" }),
+        )));
+        assert_eq!(body["cleared"], json!(true));
+        assert_eq!(body["entries"].as_array().unwrap().len(), 0);
+        assert!(
+            !history_path(&directory).exists(),
+            "「关闭即清空」要真的把明文从盘上拿掉，留一个空数组等于没清"
+        );
+        assert_eq!(load(&directory)["entries"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn clear对没有历史档的目录算成功() {
+        // 幂等：宿主每 1 秒重载都会踩一次清空，第一次之后档就不存在了。
+        // 第二、三次若回 ok:false，那句 "Clipboard history clear refused" 就又会刷屏。
+        let directory = sandbox("clear_missing");
+        for round in 0..3 {
+            let body = value_of(handle(&request_bytes(
+                &directory,
+                json!({ "operation": "clear" }),
+            )));
+            assert_eq!(body["cleared"], json!(true), "第 {round} 次清空");
+        }
+    }
+
+    #[test]
+    fn clear之后还能再收一条() {
+        // 锁侧车刻意不删（删了另一个进程会在同一路径上锁到另一个 inode），
+        // 所以清空之后写侧必须照常用。这条同时锁住"侧车没被顺手删掉"。
+        let directory = sandbox("clear_then_capture");
+        capture(&directory, "第一条");
+        handle(&request_bytes(&directory, json!({ "operation": "clear" })));
+        let body = capture(&directory, "清空之后又复制的一条");
+        assert_eq!(body["captured"], json!(true));
+        assert_eq!(
+            texts(&load(&directory)),
+            vec!["清空之后又复制的一条".to_owned()]
+        );
+        assert!(
+            lock_path(&history_path(&directory)).exists(),
+            "锁侧车应留在原地"
+        );
     }
 
     #[test]
