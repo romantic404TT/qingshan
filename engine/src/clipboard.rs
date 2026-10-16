@@ -67,6 +67,9 @@ struct Envelope {
 struct Action {
     operation: String,
     text: Option<String>,
+    /// 只有 `set_pinned` 带这个键（宿主 `ClipboardHistoryStore.java:113` 按操作名加）。
+    /// 所以它是 `Option` 且**缺了就拒**——猜一个默认值等于凭空固定或凭空取消一条。
+    pinned: Option<bool>,
 }
 
 /// 一个操作的结果：要么是一份 `value`（宿主 `:133` 取 `optJSONObject("value")`），
@@ -113,12 +116,80 @@ pub fn handle(request: &[u8]) -> Reply {
                 Err(_) => Reply::Fail("mobile_clipboard_capture_failed"),
             }
         }
+        "remove" => match entry_text(envelope.action.text.as_deref()) {
+            Ok(text) => match remove_entry(&path, text) {
+                Ok((removed, entries)) => Reply::Ok(json!({
+                    "removed": removed,
+                    "entries": entries_of(&entries)
+                })),
+                Err(_) => Reply::Fail("mobile_clipboard_removal_failed"),
+            },
+            Err(reason) => Reply::Fail(reason),
+        },
+        "set_pinned" => match (
+            entry_text(envelope.action.text.as_deref()),
+            envelope.action.pinned,
+        ) {
+            (Ok(text), Some(pinned)) => match pin_entry(&path, text, pinned) {
+                Ok((updated, entries)) => Reply::Ok(json!({
+                    "updated": updated,
+                    "entries": entries_of(&entries)
+                })),
+                Err(_) => Reply::Fail("mobile_clipboard_pin_update_failed"),
+            },
+            (Err(reason), _) => Reply::Fail(reason),
+            (_, None) => Reply::Fail("invalid_mobile_clipboard_request"),
+        },
         "clear" => match clear_entries(&path) {
             Ok(()) => Reply::Ok(json!({ "cleared": true, "entries": [] })),
             Err(_) => Reply::Fail("mobile_clipboard_clear_failed"),
         },
         _ => Reply::Fail("not_implemented"),
     }
+}
+
+/// `remove` / `set_pinned` 用文字定位条目。判据与上游一致：只挡"空"与"过长"两件事，
+/// **不挡纯空白**——一条全是空格的复制内容确实可能存在，它不是空的。
+/// 不合规是**硬错误**（上游也回 `Err`），不是 `captured:false` 那种良性拒收：
+/// 空文字定位不到任何条目，多半是调用方写错了，静默成功会把 bug 藏起来。
+fn entry_text(text: Option<&str>) -> Result<&str, &'static str> {
+    let Some(text) = text else {
+        return Err("invalid_mobile_clipboard_request");
+    };
+    if text.is_empty() || text.len() > MAX_MOBILE_TEXT_BYTES {
+        return Err("invalid_mobile_clipboard_entry");
+    }
+    Ok(text)
+}
+
+/// 按内容删，不按行号——宿主手里那份卡片列表随时可能是旧的（另一个进程刚删过或刚排过序）。
+/// **没删掉任何东西就不写盘**：一次过时的删除不该把用户的历史重写一遍。
+fn remove_entry(path: &Path, text: &str) -> io::Result<(bool, Vec<Entry>)> {
+    let _lock = lock_history(path)?;
+    let mut entries = load_entries(path)?;
+    let before = entries.len();
+    entries.retain(|entry| entry.text != text);
+    let removed = before != entries.len();
+    if removed {
+        persist(path, &entries)?;
+    }
+    Ok((removed, entries))
+}
+
+/// 固定 / 取消固定，同样按内容定位。值没变就不写盘（幂等，也省一次 fsync），
+/// 但仍回 `updated:true`——"这条存在且已经是你要的状态"是成功，不是失败。
+fn pin_entry(path: &Path, text: &str, pinned: bool) -> io::Result<(bool, Vec<Entry>)> {
+    let _lock = lock_history(path)?;
+    let mut entries = load_entries(path)?;
+    let Some(entry) = entries.iter_mut().find(|entry| entry.text == text) else {
+        return Ok((false, entries));
+    };
+    if entry.pinned != pinned {
+        entry.pinned = pinned;
+        sort_entries(&mut entries);
+        persist(path, &entries)?;
+    }
+    Ok((true, entries))
 }
 
 /// 清空历史。**没有档也算成功**（幂等）——宿主每 1 秒重载都会在开关关着时踩一次
@@ -762,15 +833,196 @@ mod tests {
     }
 
     #[test]
-    fn 其余三个操作与未知操作仍回未实现() {
+    fn remove与set_pinned与未知操作仍回未实现() {
         let directory = sandbox("stubbed");
-        for operation in ["remove", "set_pinned", "replace", "teleport"] {
+        for operation in ["replace", "teleport"] {
             let request = request_bytes(&directory, json!({ "operation": operation }));
             let reason = match handle(&request) {
                 Reply::Fail(reason) => reason,
                 Reply::Ok(body) => panic!("{operation} 竟回了 ok:true：{body}"),
             };
             assert_eq!(reason, "not_implemented", "{operation} 应回未实现");
+        }
+    }
+
+    #[test]
+    fn remove删掉指定那条其余原样() {
+        let directory = sandbox("remove");
+        capture(&directory, "甲");
+        capture(&directory, "乙");
+        capture(&directory, "丙");
+        let body = value_of(handle(&request_bytes(
+            &directory,
+            json!({ "operation": "remove", "text": "乙" }),
+        )));
+        assert_eq!(body["removed"], json!(true));
+        assert_eq!(texts(&body), vec!["丙".to_owned(), "甲".to_owned()]);
+        assert_eq!(
+            texts(&load(&directory)),
+            vec!["丙".to_owned(), "甲".to_owned()],
+            "应答里的列表必须与盘上一致，否则面板下一次读到的和这次显示的不是一回事"
+        );
+    }
+
+    #[test]
+    fn remove对不存在的条目算成功且不写盘() {
+        // 幂等：宿主手里那份卡片列表随时可能过时（另一个进程刚删过）。
+        // 算成功，但不能顺手把盘重写一遍。
+        let directory = sandbox("remove_missing");
+        capture(&directory, "唯一的一条");
+        let path = history_path(&directory);
+        let before = std::fs::read(&path).unwrap();
+        let body = value_of(handle(&request_bytes(
+            &directory,
+            json!({ "operation": "remove", "text": "早就不在了的一条" }),
+        )));
+        assert_eq!(body["removed"], json!(false));
+        assert_eq!(texts(&body), vec!["唯一的一条".to_owned()]);
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            before,
+            "没删掉任何东西就不该写盘"
+        );
+    }
+
+    #[test]
+    fn set_pinned置真后该条排到最前() {
+        let directory = sandbox("pin");
+        capture(&directory, "甲");
+        capture(&directory, "乙");
+        capture(&directory, "丙");
+        let body = value_of(handle(&request_bytes(
+            &directory,
+            json!({
+                "operation": "set_pinned",
+                "text": "甲",
+                "pinned": true
+            }),
+        )));
+        assert_eq!(body["updated"], json!(true));
+        assert_eq!(body["entries"][0]["text"], json!("甲"));
+        assert_eq!(body["entries"][0]["pinned"], json!(true));
+        assert_eq!(
+            texts(&load(&directory)),
+            vec!["甲".to_owned(), "丙".to_owned(), "乙".to_owned()],
+            "固定的永远在前，其余按时间新的在前"
+        );
+    }
+
+    #[test]
+    fn set_pinned取消后置假且排序回落() {
+        let directory = sandbox("unpin");
+        capture(&directory, "甲");
+        capture(&directory, "乙");
+        handle(&request_bytes(
+            &directory,
+            json!({ "operation": "set_pinned", "text": "甲", "pinned": true }),
+        ));
+        let body = value_of(handle(&request_bytes(
+            &directory,
+            json!({ "operation": "set_pinned", "text": "甲", "pinned": false }),
+        )));
+        assert_eq!(body["updated"], json!(true));
+        assert_eq!(
+            texts(&load(&directory)),
+            vec!["乙".to_owned(), "甲".to_owned()],
+            "取消固定后该条要回到时间序里，不该继续占在最前"
+        );
+        assert_eq!(stored_entries(&directory)[1].pinned, false);
+    }
+
+    #[test]
+    fn set_pinned对不存在的条目算成功但不写盘() {
+        // 与 remove 同一类：宿主手里那份列表可能已经过时。回 updated:false 是实话，
+        // 但不是故障——不能因此让面板报「无法修改剪贴板历史」。
+        let directory = sandbox("pin_missing");
+        capture(&directory, "唯一的一条");
+        let path = history_path(&directory);
+        let before = std::fs::read(&path).unwrap();
+        let body = value_of(handle(&request_bytes(
+            &directory,
+            json!({ "operation": "set_pinned", "text": "早就不在了的一条", "pinned": true }),
+        )));
+        assert_eq!(body["updated"], json!(false));
+        assert_eq!(texts(&body), vec!["唯一的一条".to_owned()]);
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            before,
+            "什么都没改就不该写盘"
+        );
+    }
+
+    #[test]
+    fn 过时的删除不会顺手截断盘上那份() {
+        // 「没删掉东西就不写盘」这条规则的真正代价，用"内容一样"是测不出来的
+        // （重写一遍同样的数组，字节完全相同）。所以造一份超过 50 条的档：
+        // 读的时候会被截到 50，若删失败还照样写盘，用户第 51 条以后就凭空消失了。
+        let directory = sandbox("no_truncate");
+        std::fs::create_dir_all(directory.join(STORAGE_DIRECTORY)).unwrap();
+        let path = history_path(&directory);
+        let many: Vec<Entry> = (0..MAX_ENTRIES + 10)
+            .map(|index| Entry {
+                text: format!("条目 {index:03}"),
+                timestamp_ms: 1_000 + index as u64,
+                pinned: false,
+            })
+            .collect();
+        std::fs::write(&path, serde_json::to_vec(&many).unwrap()).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let body = value_of(handle(&request_bytes(
+            &directory,
+            json!({ "operation": "remove", "text": "根本不存在的一条" }),
+        )));
+        assert_eq!(body["removed"], json!(false));
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            before,
+            "删失败就把 60 条截成了 50 条 ⇒ 那次写盘必须根本不发生"
+        );
+        // 同一条规则对 set_pinned 也成立：固定一条不存在的，不该动盘。
+        value_of(handle(&request_bytes(
+            &directory,
+            json!({ "operation": "set_pinned", "text": "根本不存在的另一条", "pinned": true }),
+        )));
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        // 以及"已经是这个值"：置一个本来就 false 的条目为 false，也不该写盘。
+        // 这条断言不是洁癖——上面那份 60 条的档一旦被重写就会被截成 50 条。
+        let again = value_of(handle(&request_bytes(
+            &directory,
+            json!({ "operation": "set_pinned", "text": "条目 059", "pinned": false }),
+        )));
+        assert_eq!(again["updated"], json!(true), "状态已经对了，算成功");
+        assert_eq!(std::fs::read(&path).unwrap(), before, "值没变就不该动盘");
+    }
+
+    #[test]
+    fn set_pinned缺pinned字段算请求不合法() {
+        // 宿主只在 set_pinned 时带 pinned（ClipboardHistoryStore.java:113）。
+        // 缺了就是有人在乱发请求，不能猜一个默认值——猜成 true 会凭空固定一条。
+        let directory = sandbox("pin_missing_field");
+        capture(&directory, "甲");
+        let reason = match handle(&request_bytes(
+            &directory,
+            json!({ "operation": "set_pinned", "text": "甲" }),
+        )) {
+            Reply::Fail(reason) => reason,
+            Reply::Ok(body) => panic!("缺 pinned 竟回了 ok:true：{body}"),
+        };
+        assert_eq!(reason, "invalid_mobile_clipboard_request");
+        assert_eq!(texts(&load(&directory)), vec!["甲".to_owned()]);
+    }
+
+    #[test]
+    fn 空文字的删除与固定被拒() {
+        let directory = sandbox("empty_text_entry");
+        capture(&directory, "甲");
+        for operation in ["remove", "set_pinned"] {
+            let request = request_bytes(&directory, json!({ "operation": operation, "text": "" }));
+            let reason = match handle(&request) {
+                Reply::Fail(reason) => reason,
+                Reply::Ok(body) => panic!("{operation} 的空 text 竟回了 ok:true：{body}"),
+            };
+            assert_eq!(reason, "invalid_mobile_clipboard_entry");
         }
     }
 
