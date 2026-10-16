@@ -520,6 +520,29 @@ AGP 9.x 要求 Gradle 9.6+），升 AGP 会直接破坏构建。
     ⇒ 复位也是两条一起：`fixed-to-user-rotation -d 0 default` + `user-rotation lock 0` +
     把 `accelerometer_rotation` 写回原值。**注意 `cmd window user-rotation free` 会顺手把
     `accelerometer_rotation` 改成 1**（实测：执行后 accel 从 0 变 1），照原值恢复要在它之后做。
+50. **`install -r` 之后连着做几轮旋转，会把键盘打成"键全不响"的假死态；判回归前先用 `ime set` 换出去再换回来**（2026-10-16 03:18–03:22 踩，差点误报"我的改动打死了输入"）：
+    现场是 `mInputShown=true`、`mIsInputViewShown=true`、`mCurMethodId` 是我们的、键盘节点齐全
+    （`更多` 工具栏行在、`q` 键 bounds 在），**但逐字点 `n i h a o` 之后字段仍是占位符 `打字试试`、候选 0**
+    ——看起来完全像新包把输入路径弄坏了。真因是反复 `install -r` + 反复旋转之后，编辑器连接处于
+    半死状态。证伪动作只花 20 秒：`ime set com.sohu.inputmethod.sogouoem/.SogouIME` 停 2 秒，
+    再 `ime set app.qingshan.ime/app.msime.android.MSIMEInputService`，之后同样的操作立刻
+    **候选 6 条、字段 `nihao`**。
+    ⇒ 三条：① **任何"改完输入坏了"的结论之前，先重绑一次服务再测**（与第 42 条同源：那条是
+    `force-stop` 把默认输入法绑走，这条是 `install -r` + 旋转把编辑器连接弄死，都是**连接态**问题不是代码问题）；
+    ② 重绑用 `ime set` 换出去再换回来，**不要用 `am force-stop`**（第 21 条：那会把默认输入法整个切走）；
+    ③ 一轮里 `install -r` 与旋转测试交替做之后，中间必须重绑一次再取基线，否则"改前/改后"两组数不可比。
+51. **这个宿主的"严格读取"包含**缺键即抛**：接新 native 前要扫完整段消费代码，不能只看第一个 `getJSONObject`**（2026-10-16 03:14 实测，代价是一次真机返工）：
+    我给 `updatePreferencesRaw` 写信封时照 `viewRaw` 的形态把 View 直接放进展位的 `value`，
+    宿主 `MSIMEInputService.java:2332` 那句 `result.getJSONObject("view")` 确实满足了，
+    但 `:2387` 还有一句 `strictBoolean(result, "deferred")`，而 `:850` 的实现是
+    `if (!(value instanceof Boolean)) throw new JSONException("Invalid boolean: " + key);`
+    —— **缺键和给错类型一样抛**。结果：`{"ok":false}` 的旧症状被 `{"ok":true}` 的新抛点顶替，
+    屏幕上那句「设置读取或应用失败」**一个字都没少**，而我从静态读码上看不出来（我扫的是
+    `2172-2400` 的**直接**取字段行，没扫到方法末尾那句）。
+    ⇒ 做法：接任何回信封的 native 之前，把**消费这个信封的整个方法体**扫一遍
+    （`awk 'NR>=起 && NR<=止' … | grep -nE "getJSONObject|getString|getInt|strictBoolean\(|strictOr\("`），
+    并把扫出来的**每一个键**写成一条单测断言（本轮补的 `应答体给齐update那两处严格读取` 就是这条锁，
+    临时抽掉 `deferred` 它当场红）。**同一条也解释了为什么"能编译、能返回 ok"不等于"契约对上了"。**
 
 ## 方案 A 实现与真机验收（2026-10-14 03:06–03:25）
 
@@ -2988,6 +3011,8 @@ MD5 `cfdab2624a8e6469b588984477f1ed65` / 29,461,249 B）。
 **push 由用户执行**（agent 不接触任何凭据）：
 `git remote add origin <URL>` + `git push -u origin main`，URL 填好后把
 `NOTICE.md` §5 与 `README.md`「构建前提」里那两处「⚠ 待填」一起换掉。
+**（现值 2026-10-16 12:34：上面这组命令已撤销** —— 用户拍板公开仓库这一步先不做，两处「⚠ 待填」
+已改成「本仓库暂不公开」，本轮起 agent 不再生成 push 命令。见待办第 19 条的结案记录。**）
 
 ### 签名链与发布准备评估（2026-10-15 02:51–03:20，本轮主任务，**只评估与设计，没出 release 包**）
 
@@ -3420,6 +3445,141 @@ D 路线的门自己开**，不需要额外实现。这条要在动手那天写�
 3. 动手那轮必须带的对照验收：改前"提示 4 秒内候选行被隐藏"这一条要**复现一次再修一次**，
    否则无法证明修的是它（上轮只读到规则，没量到 4 秒的现场）。
 
+## loadPreferences 方案丙第一步：实现了，但**没提交**（2026-10-16 03:26，发现第一步无法独立成立）
+
+用户拍板做丙、分两步，本轮第一步 = load + update。代码已写完并真机跑通，
+**但按本轮任务书自己那条「若发现第一步无法独立成立就停下汇报、不硬做」的约定，我没有提交**。
+下面是实测的"能"与"不能"。
+
+### 一、做对了的部分（都有真机数）
+
+| 判据 | 改前 | 改后 |
+|---|---|---|
+| 键盘上「设置读取或应用失败，保留当前设置」 | 每次空闲渲染都在 | **空闲 0 次、组合中 0 次** |
+| 旋转后诊断行占用候选区（工具栏行消失） | 消失 4 秒（+2..+5 s 采样命中，+6 s 已回） | 采样到工具栏行短暂不在，但**提示文本 0 次** |
+| 金路径 | 点候选 `你好` / 再敲 + 空格 `你好你好` / FATAL 0 | **同样通过**，FATAL 0 |
+| D 路线的门 `candidateEnglishGloss` | 恒假（`:2260` 先抛，走不到 `:2295`） | **开了**（见下面第三节的间接证据） |
+| 单测 | 59 | **63**（新增 4 条，含一条专门锁 `deferred` 缺键） |
+| JNI 符号 | 两 ABI 各 102、缺失 0 多余 0 | 不变（真实现 17 → 19，桩 85 → 83） |
+
+产物：`app-debug.apk` 49,898,033 B（clean，比上一版 **+504 B**；`.so` arm64 4,372,040 / x86_64 4,620,376）。
+
+### 二、翻车过一次，而且是被单测兜住的那类
+
+第一版我照 `viewRaw` 的形态写信封（`value` 就是 View），真机上**那句提示一个字都没少**。
+逐行扫 `MSIMEInputService.java:2260-2388` 才发现宿主对这份 `value` 有**两处**严格读取，
+不是一处：`:2332` 的 `getJSONObject("view")`，和 `:2387` 的 `strictBoolean(result, "deferred")`。
+而 `strictBoolean` 对**缺键也抛**（同文件 `:850` `if (!(value instanceof Boolean)) throw ...`）
+⇒ 少一个 `deferred` 就等于没修。补上 `"deferred": false` 后提示才消失。
+**⇒ 新记环境陷阱第 51 条：这个宿主的"严格读取"包含缺键即抛，接新 native 时要把整段消费代码扫完，
+不能只看第一个 `getJSONObject`。**
+
+### 三、为什么"无法独立成立"：apply 跑通后，每秒都会踩到下一个桩
+
+`reloadPreferences` 由 `PreferencesReloader` **每 1 秒**轮一次（`PreferencesReloader.java:45`
+那个 `post(..., 1000)`），且宿主**没有"同修订号跳过"的守卫**（全文件 grep
+`appliedRevision|lastRevision|revision ==` → **0 命中**）。改前 apply 在 `:2260` 就抛，
+后面的代码**从来没跑过**；改通之后它每秒完整跑一遍，于是走到 `:2345`：
+
+```java
+        if (!clipboardHistoryEnabled && clipboardHistory != null) {
+            clipboardHistory.clearQuietly();
+```
+
+`clipboard_history` 在空文档下取宿主默认 **false**（`:2211` `optBoolean("clipboard_history", false)`），
+而这一句**不是"从有到无"的跳变判定**，是每次 apply 都判 ⇒ 每秒调一次剪贴板清空，
+而 `mobileClipboardHistoryRaw` 还是桩 ⇒ logcat 每次一条警告。
+**实测：全新服务实例、键盘静置不碰任何面板，20 秒内 34 条
+`Clipboard history clear refused: not_implemented`**（归档
+`D:\toolchains\tmp\qingshan-snap\loadprefs\sideeffect-logcat.txt`）。
+这条栈本身就是 D 门已开的证据：它出现在 `applyPreferencesSnapshot:2346`，
+而 `candidateEnglishGloss` 的赋值在 `:2295` —— **能跑到 2346 就说明 2295 已经执行过**。
+
+上游对同一件事是有防的，而且防法就写在那段注释里（`:707`，#5602）：
+它区分偏好的**来源**（`LIVE` 才重算皮肤/外观/剪贴板开关；`RUNTIME_OPTIONS_COPY` 那份
+`clipboard_history` 永远是出厂关，按它清空就会"每换一个输入框历史都被清掉"）。
+我们回的是 `LIVE` 的一份**空文档**，所以每次都被当成"用户把剪贴板历史关了"。
+
+### 四、三条出路（等用户拍，我不动手）
+
+- **甲**：把第一步的文档从 `{}` 换成"宿主自己那套默认的显式副本"（至少写 `clipboard_history: true`）。
+  代价：**这是替用户打开一个会记录剪贴板的开关**，属隐私语义变更，我不擅自选。
+- **乙（我推荐）**：**第一步与第二步合并成一轮做**（load + update + save，约 145–175 行）。
+  有了真 save，文档才可能带上用户真实开关，`:2345` 才不会再误判；这也正是上游的语义。
+- **丙**：先只把 update 的 `deferred` 契约与 `preferences.rs` 那 4 条单测**作为测试与文档提交**，
+  两个导出留桩（提示继续挂着），下一轮连同 save 一起落地。
+
+**本轮工作树状态**：`engine/src/lib.rs`、`engine/src/stub.rs`、`engine/tools/gen_stub.py` 已改，
+`engine/src/preferences.rs` 新增，`host/java` **零改动**；**未提交**，
+`git diff --stat` 与 `git status --porcelain` 见本轮汇报。要退回干净态：
+`git checkout -- engine/src/lib.rs engine/src/stub.rs engine/tools/gen_stub.py` 并删掉
+`engine/src/preferences.rs`（改前快照在 `D:\toolchains\tmp\qingshan-snap\loadprefs\*.before`）。
+
+## `deferred` 语义判定：拦不住剪贴板刷屏（2026-10-16 12:34，判定**丙**，本轮未改代码）
+
+用户上一轮留的问题：既然第一步引出了"每秒踩一次剪贴板桩"，能不能用 `deferred` 把它挡住？
+**读完的结论是不能，而且顺带发现那个副作用被我上一轮说重了。**
+
+### 一、宿主全树只有两处 `deferred`，一处还是注释
+
+```
+grep -rn "deferred" host/java --include=*.java
+  app/msime/android/core/MSIMEInputService.java:2387:        preferencesNotice = strictBoolean(result, "deferred")
+  app/msime/android/core/MSIMEInputService.java:5602:            // Scheme replacement is never deferred: ...（注释）
+```
+
+`:2387` 是**唯一**的读取点，而它只做一件事：在两个字符串里挑一个赋给 `preferencesNotice`。
+**没有任何控制流**。更要命的是次序——剪贴板那一句在 `:2345`，**跑在 `:2387` 之前**，
+所以 `deferred` 就算被宿主"尊重"也来不及拦。
+
+⇒ **把 `deferred` 改成 `true` 的实际后果**：副作用一条不少，反而让表头**永久挂着
+「设置将在组词结束后应用」**这句假话（我们并不会在组词结束后再应用什么）。
+**比现状更差。**
+
+### 二、`deferred` 真正的语义在上游的冒烟测试里钉着
+
+`msime-develop/platforms/android/tests/core/NativeSmoke.java:116` 与 `:122`：
+
+```java
+            if (!queued.contains("\"deferred\":true")) throw new AssertionError(queued);
+            if (!updated.contains("\"deferred\":false")) throw new AssertionError(updated);
+```
+
+读出来的意思就一句：**runtime 收了新偏好、但当前正在组词，所以"稍后再应用" ⇒ `deferred:true`；
+没在组词就当场生效 ⇒ `false`。** 上游 `crates/client-core/src/preferences.rs` 里
+`grep deferred` **0 命中**（它不是偏好存储层的字段，是运行时应答层的）。
+
+⇒ 顺带记一条**我们自己的保真度缺口**：现在 `updatePreferencesRaw` 硬回 `false`，
+而按上游语义"正在组词时"该回 `true`。这个值我们**算得出来**——`view.editing_text` 非空即在组词
+（`qingshan/engine/src/view.rs:114` 那个字段，宿主用 `getString` 硬取）。改成
+`deferred = !editing_text.is_empty()` 大约 2 行，**下一轮做 save 时顺手带上**。
+本轮不动（判定是丙，按约定不硬做）。
+
+### 三、副作用的真实严重度：我上一轮说重了，实测下来是日志噪音
+
+上一轮我写的是"每秒清空一次剪贴板历史"，读起来像会毁数据。三条实测把它降级：
+
+1. **`clearQuietly()` 自己把异常吞了**：`qingshan/host/java/app/msime/android/clipboard/ClipboardHistoryStore.java:97-103`
+   是 `try { clear(); } catch (IllegalStateException error) { Log.w(...) }` ⇒ 不崩、不打断输入。
+2. **那个 store 本来就是桩撑的，没有数据可毁**：它的读写全走 `NativeClient.mobileClipboardHistory`
+   （同文件 `:120` 附近），而那条还在桩里 ⇒ 历史**从来就是空的**，"清空"清的是空气。
+3. **我担心的"面板被每秒关掉"没有发生**：`MSIMEInputService.java:2345` 那个 `else closeClipboardHistory()`
+   理论上会每秒关一次剪贴板面板，真机点开面板后静置 4 秒再查——
+   `本机 / 云端 / 刷新` 三个节点**都还在**，面板没关（同期 logcat 里确实有 14 条警告）。
+
+⇒ 剩下的实际代价是**logcat 刷屏 + 每秒构造一次异常对象**。速率两次实测不一致：
+静置 20 秒 **34 条**（≈1.7/s），刚点开面板那 4 秒 **14 条**（≈3.5/s）——
+说明 apply 不止被 1 秒轮询触发，面板交互也会多触发几次。**这条我没继续往下查**，
+因为按上面的降级结论它不值得再占一轮。
+
+### 四、所以三条出路的排序变了
+
+- **推荐：把第一步就这么提交掉**（提示消失 + D 门开是真收益，代价只是日志噪音），
+  save 作为第二步按自己节奏排。上一轮我列的"甲（替用户开剪贴板开关）/ 乙（合并做）/ 丙（只提测试）"
+  里，**甲现在更不该做**（为一个日志噪音去改隐私默认值），**乙不再是必须**。
+- 想连噪音一起消掉的正解仍然是**第二步 save**：有了真存储，`clipboard_history` 才带得动真值。
+- **回退第一步**没必要了（副作用不伤功能，收益是真的）。
+
 ## 待办
 
 分发声明见仓库根的 `NOTICE.md`（上游与固定依据、GPL-3.0 §5a 修改清单、随包数据来源与许可、
@@ -3676,6 +3836,12 @@ D 路线的门自己开**，不需要额外实现。这条要在动手那天写�
     （这台机器 `core.autocrlf=true` 会把 `sign-apk.sh` 检出成 CRLF）。
     **待用户做**：建 GitHub 仓 → 换掉 NOTICE/README 里两处「⚠ 待填」→ 自己跑
     `git remote add origin <URL>` + `git push -u origin main`（agent 不碰凭据）。**）
+    **（裁定 2026-10-16 12:34：本条结案，走的是"暂不做"这一支。** 用户拍板**公开仓库这一步先不做**，
+    所以：① 两处「⚠ 待填」已改成**「本仓库暂不公开」**（NOTICE §「本仓库的公开地址」与
+    README「构建前提」上方），② 上一轮生成的 `git remote add` / `git push -u origin main` 那组命令
+    **已撤销，本轮起 agent 不再生成 push 命令**，③ 提交 B（"Fill in public repository URL"）**不建**。
+    **义务没有撤销**：一旦对外分发 APK，GPL-3.0 的完整对应源码义务立刻生效，那时必须先公开、
+    把地址填回这两处。本条从"等一个 URL"改成"等一次公开决定"。**）
 20. **「检查更新」等用户拍三选一**（2026-10-15 读码完，**没改 Java**）。推荐 **b**：
     破例面实测 **1 个文件 1 行**（`UpdateJobService.java:123-125` 那个谓词恒真），
     一次关掉「检查更新」药丸 + 「自动更新」「更新通道」两行 + 每天一次的后台任务；
@@ -3745,3 +3911,23 @@ D 路线的门自己开**，不需要额外实现。这条要在动手那天写�
     **全部不破 Java 零改动**。附带好消息：**load+update 一落地，
     `candidate_english_gloss` 的默认 true 就会把 D 路线的门打开**（同文件 `:2221`/`:2295`，
     今天恒假只是因为 `:2260` 先抛了）。方案与落地次序见「loadPreferences 真实现评估」一节，**等用户拍**。**）
+    **（现值 2026-10-16 03:26：方案丙第一步（load + update）已实现并真机跑通，但我没有提交。**
+    成的一面：那句提示在空闲与组合中都是 **0 次**、金路径照旧（点候选 `你好`、再敲 + 空格 `你好你好`、
+    FATAL 0）、单测 59 → **63**、符号仍两 ABI 各 102 缺失 0、D 路线的门确认已开
+    （`applyPreferencesSnapshot` 能跑到 `:2346` 就说明 `:2295` 的赋值已执行）。
+    不成的一面：apply 跑通之后，每秒一轮的重载会走到 `:2345` 那句
+    `if (!clipboardHistoryEnabled && clipboardHistory != null) clearQuietly()`，
+    空文档下 `clipboard_history` 取宿主默认 false ⇒ **每秒踩一次剪贴板桩**，
+    实测静置 20 秒 34 条 `Clipboard history clear refused: not_implemented`。
+    ⇒ **第一步无法独立成立**，按本轮任务书自己那条约定停下不硬做。三条出路（含我推荐的
+    "第一、二步合并成一轮"）与退回命令见「loadPreferences 方案丙第一步」一节，**等用户拍**。**）
+    **（现值 2026-10-16 12:34：`deferred` 这条路已读完，判定**丙——与副作用无关，拦不住**。**
+    宿主全树 `deferred` 只有 `:2387` 一个读取点，且只用来在两句提示文案里挑一句，
+    而剪贴板那一句在 `:2345`、**跑在它之前**；上游真义由
+    `msime-develop/platforms/android/tests/core/NativeSmoke.java:116`/`:122` 钉着
+    （"正在组词 ⇒ `deferred:true`"）。⇒ 本轮**未改代码**。
+    顺带把副作用的严重度**降级并纠正**：`clearQuietly()` 自己吞异常、那个 store 全程是桩
+    （没有数据可毁）、真机实测剪贴板面板**不会**被每秒关掉（点开 4 秒后 本机/云端/刷新 都在）
+    ⇒ 实际代价只是 logcat 刷屏 + 每秒一次异常构造。**因此推荐把第一步直接提交**，
+    save 作为第二步按自己节奏排；上一轮我列的"甲：给文档写 `clipboard_history:true`"
+    现在更不该做（为一个日志噪音去改隐私默认值）。完整判据见「`deferred` 语义判定」一节。**）
