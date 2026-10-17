@@ -649,28 +649,31 @@ pub extern "system" fn Java_app_msime_android_NativeClient_setCharacterWidthRaw(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_app_msime_android_NativeClient_setChinesePunctuationRaw(
-    mut env: EnvUnowned<'_>, _class: JObject<'_>, session: jlong, _enabled: jboolean,
+    mut env: EnvUnowned<'_>, _class: JObject<'_>, session: jlong, enabled: jboolean,
 ) -> jbyteArray {
-    // 止血：青简 Core 里没有标点开关（`projects/qingjian` 全仓 grep `chinese_punctuation` 0 命中），
-    // 上游那份 `client-core` 有 `set_chinese_punctuation_enabled`，我们链的这份没有，所以这里
-    // **只回声当前 View**，不 advance、不 requery、不改引擎状态。
+    // 甲（止血）+ 待办 28（接线）两件事，治的不是同一个问题：
     //
-    // 为什么回声就够：真正决定中英文标点面的是宿主自己的 `chinesePunctuation` 字段，
-    // 消费点在 `ImeLetterRows.java:677-681`、`ImeBottomRow.java:324-327`、
-    // `MSIMEInputService.java:3586-3589` 三处，读的都是那个 Java 字段（`3588` 那行把 view 的
-    // scheme / local_mode 和它一起传进去，view 只要还是"当前这份 View"结论就不变）。
+    // 甲治的是连坐：桩回 `ok:false` ⇒ 宿主 `value()` 抛 ⇒
+    // `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:4467`
+    // 弹「标点状态未能同步到输入引擎」⇒ 点亮 `hasDiagnostic` ⇒ 标题行 / 工具栏行 /
+    // 候选行 / 候选视口四行一起隐藏。所以下面**不 advance、不 requery**，只回声当前 View。
     //
-    // 治的是哪一件：桩回 `ok:false` ⇒ 宿主 `value()` 抛 ⇒ `MSIMEInputService.java:4462-4468`
-    // 弹「标点状态未能同步到输入引擎」⇒ 点亮 `hasDiagnostic`（同文件 `:7804`）⇒
-    // 标题行 / 工具栏行 / 候选行 / 候选视口四行一起隐藏 4 秒。转屏每次重跑偏好应用都会踩一遍。
+    // 待办 28 治的是"上一轮的断言错了"：青简 Core **有**中文标点开关
+    // （`qingjian/crates/qingjian-core/src/engine/setup.rs:9`），所以这里把宿主传来的值
+    // 真的写进引擎。为什么值得写、以及它在设备上为什么看不见，都记在
+    // `Session::set_chinese_punctuation` 的注释里，不在这儿重复。
     //
-    // **`setCharacterWidth` 故意不做同样的事**：宿主在 `:4451-4453` 会拿回声里的宽度反向覆盖
-    // Java 自己的 `fullWidthInput`，而我们的 View 里 `character_width` 恒为 `Halfwidth`
-    // （`view.rs:27` 明写）⇒ 直接回声会把用户的全角打回半角。理由见 PIN
-    // 「旋转丢组合 + 横屏候选条合并调查」第四节。
+    // 标点面目前仍由宿主自己决定：三处消费点读的都是 Java 那个 `chinesePunctuation` 字段，
+    // 判定入口是 `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:3586`。
+    //
+    // 回声的形状必须是"整份 View"（`view = value(..)` 那类站点），不是 Transition
+    // （`apply(..)` 那类）——混了不会崩，只会把 32 个 View 键静默读成默认值。
     logcat::init();
     let id = session as u64;
-    let built = with_session(id, |state| build_view(state, id));
+    let built = with_session(id, |state| {
+        state.set_chinese_punctuation(enabled);
+        build_view(state, id)
+    });
     match built.and_then(|view| echo_view_body(&view)) {
         Some(value) => wire::ok_value(&mut env, value),
         None => wire::not_implemented(&mut env),

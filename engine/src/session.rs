@@ -168,6 +168,20 @@ impl Session {
         }
     }
 
+    /// 把宿主的「中文标点」开关写进引擎。引擎侧的名字是 `full_width_punctuation`
+    /// （`qingjian/crates/qingjian-core/src/engine/setup.rs:9`，注释逐字「设置中文模式的标点转换。」），
+    /// 读它的是 `qingjian/crates/qingjian-core/src/engine/composing.rs:16` 的 `punctuate()`。
+    ///
+    /// **现状要说白**：我们这条壳路上目前**没有** `punctuate()` 的调用点（宿主按标点键走的是
+    /// `punctuationWithContext`，那是桩、且在杀会话组，见 PIN「启动路径的击穿判定」），
+    /// 所以这个开关**真机不可观测**。它仍然要做，是因为：① 它让引擎状态与宿主卡片一致，
+    /// 将来把标点路由到 Core 时不必再补；② 每次建会话宿主都会重放一遍
+    /// （`qingshan/host/java/app/msime/android/core/MSIMEInputService.java:1713`），
+    /// 挂起再恢复的引擎不会带着旧值回来。
+    pub fn set_chinese_punctuation(&mut self, enabled: bool) {
+        self.engine.set_full_width_punctuation(enabled);
+    }
+
     /// 上屏之后调：记脏，到点才真写盘。
     pub fn note_commit(&mut self) {
         self.dirty = true;
@@ -1498,5 +1512,25 @@ mod tests {
             "Consumed 就涨号，多涨是安全侧"
         );
         assert_eq!(session.candidates.len(), list_len, "而候选表本身没变");
+    }
+
+    /// 待办 28：宿主的「中文标点」开关要真的落进引擎。
+    /// **判别器**：把 `set_chinese_punctuation` 的函数体删掉，第一条断言当场就红
+    /// （引擎出厂是开，所以先断"关掉不转"再断"开着才转"）。
+    #[test]
+    fn chinese_punctuation_switch_reaches_the_engine() {
+        let mut session = session_with(0);
+        session.set_chinese_punctuation(false);
+        assert_eq!(
+            session.engine.punctuate(','),
+            None,
+            "关掉之后逗号原样，不转全角"
+        );
+        session.set_chinese_punctuation(true);
+        assert_eq!(
+            session.engine.punctuate(','),
+            Some("，"),
+            "开着才转成全角逗号"
+        );
     }
 }
