@@ -165,6 +165,64 @@ pub fn apply_command(session: &mut Session, command: jint) -> CommandOutcome {
     }
 }
 
+/// 标点键：`punctuationWithContext` 的落点。
+///
+/// 契约出处（本轮逐字读过）：入口 `crates/host-api/src/ffi/input.rs:199`，
+/// 选路 `crates/client-core/src/punctuation.rs:32`，收尾
+/// `crates/input-runtime/src/runtime.rs:1684`。三件关键事实：
+/// 1. **组字中一律走 Engine**（`crates/client-core/src/punctuation.rs:33` 第一句就是
+///    `if context.has_composition || !context.host_context_available { return Engine }`）
+///    ⇒ 用户最高频的那条路必须由我们收尾。回 `handled:false` 不是"交回宿主"这么干净：
+///    宿主 `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:3223` 见 false 会发命令 9
+///    （`FINISH_COMPOSITION_COMMAND`，同文件 `:102`），而命令 9 在我们这边是 `NotSupported` ⇒ 组字被丢、标点还是半角。
+/// 2. **先上屏高亮候选，再问转换**（`crates/input-runtime/src/runtime.rs:1699-1700`
+///    的注释写明：对着还在组字的状态调标点会选到零号候选）。
+/// 3. **不转也要把组字收掉**（`crates/input-runtime/src/runtime.rs:1726-1728`
+///    把原字符接在那次 commit 后面，一次性上屏）。
+///
+/// 与上游的两处**刻意差异**，都记在这里：
+/// - `preceding`（宿主读来的光标前一个码点）我们**不参与选路**。上游用它做
+///   "数字/字母后面那个 `,` `.` `:` 保持半角"的判断（`crates/client-core/src/punctuation.rs:44-56`），
+///   而 Core 自己有一份等价状态：`crates/qingjian-core/src/punctuation.rs:52`
+///   的 `'.' if after_digit => return None`，由 `push`/`note_passthrough` 喂。
+///   也就是说"数字后的点保持半角"这条我们照做，只是依据的是引擎自己看到的序列，
+///   不是编辑器光标前那个字符。
+/// - 上游对非法入参回 `ok:false`（`crates/host-api/src/ffi/input.rs:204`、`:213`）。我们**一个 `ok:false` 都不回**：
+///   按 `wire.rs` 文件头的既定口径，`ok:false` 在这个宿主里等于会话降级，
+///   而入参不合法不是"引擎不可用"，是"这键我们不接管" ⇒ 回 `Passthrough`，
+///   宿主自己写原字符，会话活着。
+pub fn punctuation(session: &mut Session, ascii: jint) -> CommandOutcome {
+    let code = ascii as u32;
+    // 上游门槛是 `is_ascii_punctuation`；越界的直接交回宿主，不猜它想打什么。
+    let Some(c) = char::from_u32(code) else {
+        return CommandOutcome::Passthrough;
+    };
+    if !c.is_ascii_punctuation() {
+        return CommandOutcome::Passthrough;
+    }
+    // Core 的 `convert` 不看语言（`crates/qingjian-core/src/punctuation.rs:48` 起只查表与 `after_digit`），
+    // 「中文模式下才转」这件事按契约由调用方负责 ⇒ 英文模式交回宿主。
+    if session.english_mode() {
+        return CommandOutcome::Passthrough;
+    }
+    // 先收尾：有组字就把高亮的那个候选上屏（与命令 1 同一条路）。
+    let base = match session.highlighted_candidate() {
+        Some(candidate) => session.engine.commit(&candidate),
+        None => String::new(),
+    };
+    match session.engine.punctuate(c) {
+        Some(mark) => CommandOutcome::Commit(format!("{base}{mark}")),
+        // 引擎不转这个标点：有组字就把原字符接在后面一起上屏（上游同法），
+        // 没组字就交回宿主——此时 `hasEngineComposition()` 为假，宿主不会再发命令 9。
+        None if !base.is_empty() => {
+            let mut text = base;
+            text.push(c);
+            CommandOutcome::Commit(text)
+        }
+        None => CommandOutcome::Passthrough,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -356,5 +414,69 @@ mod tests {
             apply_command(&mut s, 1),
             CommandOutcome::Passthrough
         ));
+    }
+
+    /// 组字中按逗号（本轮真机撞到的那条路）：先把高亮候选上屏，再接 Core 转出来的全角逗号，
+    /// **一次 Commit 说完**，不留组字、也不回 `ok:false`。
+    #[test]
+    fn punctuation_finishes_the_composition_and_appends_the_converted_mark() {
+        let mut session = learning_session();
+        type_pinyin(&mut session, "nihao");
+        assert_eq!(
+            session.highlighted_candidate().map(|c| c.text),
+            Some("你好".to_string()),
+            "夹具里 ni hao 的首选是 你好，这条断言是下面那条的前提"
+        );
+        match punctuation(&mut session, b',' as jint) {
+            CommandOutcome::Commit(text) => {
+                assert_eq!(text, "你好，", "高亮候选 + 全角逗号一次性上屏")
+            }
+            other => panic!("应当是 Commit，实际 {other:?}"),
+        }
+    }
+
+    /// 待办 28 的那根线在这里接上：关掉「中文标点」之后 Core 不转，
+    /// 但组字仍要收尾 ⇒ 上屏的是原字符。**这条测试就是 `punctuate()` 的调用点。**
+    #[test]
+    fn punctuation_after_turning_the_switch_off_keeps_the_ascii_mark() {
+        let mut session = learning_session();
+        session.set_chinese_punctuation(false);
+        type_pinyin(&mut session, "nihao");
+        match punctuation(&mut session, b',' as jint) {
+            CommandOutcome::Commit(text) => {
+                assert_eq!(text, "你好,", "开关关了就不转，但组字照样收")
+            }
+            other => panic!("应当是 Commit，实际 {other:?}"),
+        }
+    }
+
+    /// 三种"我们不接管"的情形都回 `Passthrough`：英文模式、非 ASCII 标点入参。
+    /// 回 `ok:true` + `handled:false` 而不是 `ok:false`——后者在这个宿主里等于会话降级。
+    #[test]
+    fn punctuation_declines_without_killing_the_session() {
+        let mut english = learning_session();
+        english.engine.set_english_mode(true);
+        assert!(
+            matches!(
+                punctuation(&mut english, b',' as jint),
+                CommandOutcome::Passthrough
+            ),
+            "英文模式不转中文标点"
+        );
+        let mut letters = learning_session();
+        assert!(
+            matches!(
+                punctuation(&mut letters, b'n' as jint),
+                CommandOutcome::Passthrough
+            ),
+            "不是 ASCII 标点就不接（宿主本来也不会这样调）"
+        );
+        assert!(
+            matches!(
+                punctuation(&mut letters, 9_000 as jint),
+                CommandOutcome::Passthrough
+            ),
+            "超出 char 范围的入参也不能 panic"
+        );
     }
 }

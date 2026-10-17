@@ -652,6 +652,38 @@ AGP 9.x 要求 Gradle 9.6+），升 AGP 会直接破坏构建。
     **规则**：每组动作前先读一次前置（本例该读的是"会话活着没有"）；读不到就重建前置再跑，
     或者干脆**放弃这组对照、改用独立证据**——本轮最后就是靠"全 crate 没有 `punctuate()` 调用点"
     这条代码级证据下结论，并公开撤回那组 A/B。
+65. **`am force-stop app.qingshan.ime` 会把默认输入法丢掉**（2026-10-18 03:00 实测，代价是一张"冷启动"照片作废）：
+    force-stop 之后 `settings get secure default_input_method` 变成
+    `com.sohu.inputmethod.sogouoem/.SogouIME`——**没有任何提示、`mInputShown` 照样 true**，
+    于是拍到的是一张完全陌生的键盘（症状与陷阱 60 一样迷惑，但成因不同：60 是误触链接，本条是 force-stop 的副作用）。
+    **规则**：冷启动复验的序列里，`force-stop` 之后、任何截图/按键之前，必须先
+    `settings get secure default_input_method` 读回 `app.qingshan.ime/app.msime.android.MSIMEInputService`，
+    不对就用 `settings put secure default_input_method` 复位再复验 DIM + `mCurMethodId` 两项。
+66. **密码页让 `screencap` 返回 0 字节**（2026-10-18 03:20 实测 `TestPasswordActivity` 的 textPassword 拿到焦点后）：
+    `exec-out screencap -p` **退出码 0、无 stderr、输出 0 字节**。
+    这既不是陷阱 61 的"息屏 15,580 B 纯黑"，也不是"命令没跑成"，而是安全表面拒拍 ⇒
+    `< 20 KB` 那条判据在这里会给出"命令失败"的**误诊**。
+    **规则**：密码框路径改用非视觉判据——`:ime` pid 前后一致 + `grep -c "FATAL EXCEPTION"` 0 +
+    `mIsInputViewShown`；离开密码页后 `screencap` 立刻恢复正常（实测）。
+67. **审计脚本的 MISSING-PATH 那一桶根本不核行号**（2026-10-18 03:55 实测，方向是**漏报**）：
+    `classify()` 里两处 MISSING-PATH 都是**在取行数之前就 `return`** 的（"前缀写错"那支与
+    "锚定前缀对但路径对不上"那支），所以只有 **OK / AMBIG** 两桶会走后面的 `LINE-OOB` 判定。
+    后果：**历轮所有写成 `msime-develop/crates/…` 或 `qingjian/crates/…` 的引用**（第一段不在脚本
+    `KNOWN_PREFIXES` 那六个里 ⇒ 必落 MISSING-PATH）**从来没被机器核过行号**，
+    而我们一直把"MISSING-PATH 属既有口径"读成"只是没锚定、行号是可信的"——**这句是错的**。
+    **规则**：想让一条引用真被核，第一段必须落在 `KNOWN_PREFIXES`（`crates` / `platforms` /
+    `engine` / `host` / `apps` / `shared`）里 ⇒ 上游写 `crates/host-api/src/ffi/input.rs:199`、
+    青简写 `crates/qingjian-core/src/punctuation.rs:52`，仓归属用正文的话（"上游""Core"）来定，
+    不要塞进路径段。本轮据此把新写的引用改成可核形式：同一次复跑 **OK 155 → 166、MISSING-PATH 180 → 169**。
+    **这也是本轮那两处指错行号的唯一暴露路径**：改成可核写法之前，"行号在范围内但指向别处"
+    属于脚本已知局限第 2 条，任何一桶都不会红（详见本轮"标点键杀会话修复"一节第六节）。
+68. **改了源码注释之后，"装机的包还等于源码吗"要用 sha256 回答，不要靠推理**（2026-10-18 03:54 实测）：
+    本轮收口时动了 `keys.rs` 的 9 行**文档注释**（`///` 与 `//`），此时 `.so` 与 APK 是 03:09 编的、
+    装机版也是那一版。"注释不进二进制"是对的**推理**，但项目要求的是**可复验**：
+    先把装机用的两个 `.so` 的 sha256 记下来，再重跑一次 `cargo ndk … build --release`（增量，4.7 s），
+    `sha256sum -c` 两个都 **OK** ⇒ 字节相同 ⇒ **不必重打 APK、不必重装**。
+    **规则**：任何"只改注释/文档所以不用重编"的声明都配一次这种复验；
+    代价是一次增量编译（秒级），换来的是这条结论能被下一个人重推。
 
 ## 方案 A 实现与真机验收（2026-10-14 03:06–03:25）
 
@@ -4835,6 +4867,127 @@ NOTICE §5a 已加第 8 条（宿主 Java 树第 4 处破例），README 第 4 �
   （本轮接的那件本来就已计在 real 里，改的是它内部做不做，不是它是不是桩）。
 - 设备收尾：默认输入法仍 `app.qingshan.ime/app.msime.android.MSIMEInputService`、
   `user_rotation=0`、键盘已收起、`svc power stayon false`。
+  **（现值 2026-10-18 03:35：上面那条 `scan_bridges` 的「杀会话 5 一个没动」已被下一轮打破——
+  标点键转真后是 **3**。全过程见「标点键杀会话修复」一节。**）**
+
+## 标点键杀会话修复：`punctuationWithContext` 从桩转真（2026-10-18 02:53–03:35，**host/java 零改动**）
+
+### 一、上游契约（本轮逐字读过，行号现核）
+
+| 层 | 位置 | 内容 |
+|---|---|---|
+| FFI 入口 | `crates/host-api/src/ffi/input.rs:199` | `msime_client_punctuation_with_context(handle, ascii: u8, preceding: u32)`；先查 `ascii.is_ascii_punctuation()`（不是就回 `Err("invalid punctuation")`），`preceding == 0` 视作"没有前文"，非法码点回 `Err("invalid preceding character")` |
+| 选路 | `crates/client-core/src/punctuation.rs:32` | 第一句就是 **`if context.has_composition \|\| !context.host_context_available { return Engine }`**；其后才是锁定（Chinese→Engine / English→Ascii）、大写锁定改道、以及"数字或字母后面的 `,` `.` `:` 保持半角"这条智能规则 |
+| 上下文 | `crates/host-api/src/lib.rs:318` | 十个字段：character / preceding / host_context_available / has_composition / chinese_punctuation / smart_punctuation / direct_digit / direct_letter / lock / caps_lock_ascii |
+| 执行 | `crates/input-runtime/src/runtime.rs:1684` | 拼写符号与本地模式先当字符吃掉；**`engine.finish(高亮下标)` 在前、`engine.punctuation` 在后**（`:1706` 注释写明：对着还在组字的状态调标点会选到零号候选）；标点失败也不能丢掉已经产生的上屏（`:1713-1722`）；不转时把原字符接在那次 commit 后面（`:1731`） |
+| 返回形状 | 同上，走通用 `dispatch` | 标准 Transition 信封：`value` 里有 `view` / `handled` / `commit` / `commit_context` / `diagnostic` |
+| 宿主消费 | `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:3273` 与 `:2391` 的 `apply()` | `apply()` 硬取 `view` 对象与 `editing_text`（缺键即抛）、`handled` 必须是真 JSON boolean、`commit` 允许 null；返回的 `handled` 就是"这个键我们收下了" |
+
+**结论：这个操作不是"返回一个转换后的字符"，而是"把这次按键当一次过渡处理掉"**——它要负责收尾组字、
+给出上屏文本、并回一份新 View。所以"只回一个字符"那种最小实现是不存在的形状。
+
+### 二、判定：**甲**（Rust 侧能实现、< 100 行、不破 Java）
+
+关键的一条是**不能照 B1 那样回 `handled:false` 了事**：宿主 `:3223` 见 false 会去发
+命令 9（`FINISH_COMPOSITION_COMMAND`，同文件 `:102`），而命令 9 在我们这边是 `NotSupported`
+⇒ 组字被丢、标点还是半角，等于换个姿势坏。所以必须真的把这次按键**收下**。
+落点选在既有的 `run_transition` / `transition()` 上（`qingshan/engine/src/lib.rs` 第 334 行那个 `fn run_transition(`）——它已经在产
+`{handled, commit, commit_context, diagnostic, view}` 这个形状，输入路径的八件都走它，
+所以"新实现"只是新写一个 action 闭包，不碰信封。实际规模：`keys.rs` 一个函数 + 三条单测、
+`lib.rs` 一个导出、`gen_stub.py` 的 `REAL` 加一条，**共 4 个文件、约 90 行含注释**，
+`host/java` 一行没动（`git status` 里没有 `host/` 路径）。
+
+### 三、实现与**两处刻意偏离上游**（都写在代码注释里，不留到下一轮再猜）
+
+1. **`preceding` 不参与选路。** 上游用它做"数字/字母后面的 `,` `.` `:` 保持半角"；
+   Core 自己有一份等价状态 —— `crates/qingjian-core/src/punctuation.rs:52` 的
+   `'.' if after_digit => return None`，由 `push` / `note_passthrough` 喂。
+   也就是说**这条规则我们照做，但依据是引擎看到的序列，不是编辑器光标前那个字符**。
+   两者会在一种场景下给不同答案：用户在别的框里打过数字、换框后按点 —— 上游按前文判，
+   我们按引擎记忆判（引擎新会话就忘了）。**记为已知差异，不当 bug 修**，要修就得把
+   `preceding` 喂进 Core，那是改 Core 的接口，越界。
+2. **一个 `ok:false` 都不回。** 上游对非法入参回错误信封；按 `engine/src/wire.rs` 文件头
+   既定口径，`ok:false` 在这个宿主里等于会话降级，而入参不合法不是"引擎不可用"而是
+   "这键我们不接管" ⇒ 回 `Passthrough`（`ok:true` + `handled:false`，且**不带 diagnostic**，
+   免得白点亮一次连坐）。
+3. 英文模式交回宿主：Core 的 `convert` 不看语言（`crates/qingjian-core/src/punctuation.rs:48` 起只查表），
+   「中文模式下才转」按契约是调用方的责任。
+4. 收尾顺序照上游：**先 `commit(高亮候选)`，再 `punctuate(c)`**；不转时把原字符接在后面一次性上屏。
+
+单测 **102 → 105**，三条新用例都在 `engine/src/keys.rs` 的测试模块里，函数名分别是
+`punctuation_finishes_the_composition_and_appends_the_converted_mark`、
+`punctuation_after_turning_the_switch_off_keeps_the_ascii_mark`、
+`punctuation_declines_without_killing_the_session`。
+**判别器做了两向**（陷阱 59 那条"判据范围宽于意图"的反面练习）：
+把 `match session.engine.punctuate(c)` 换成恒 `None` ⇒ 第一条当场红
+（`left: "你好," / right: "你好，"`）；换成恒 `Some("，")` ⇒ 第二条红
+（`left: "你好，" / right: "你好,"`）。两次都还原、`touch` 源文件、复跑 105 全绿，
+变异残留 `grep -c` 各为 0。**顺带记一次工具自误**：第一次注入变异用多行字符串匹配失败
+（`keys.rs` 是 **CRLF**），脚本没改成任何东西，而我把那次"5 passed"当成了判别结果看
+——**没注入成功的绿不是判别器红**。
+
+### 四、真机验证（同一台 e1cdb946、`install -r` 未 `pm clear`，`:ime` 进程 pid 3945 全程不变）
+
+| 项 | 结果 | 依据 |
+|---|---|---|
+| 组字中按「,」（字母层） | ✅ 上屏 **`你好，`**，会话活着、无横幅 | 修复前同一手势是"逗号没上屏 + 组字冲成字面量 + 「输入连接失败：仅直接输入」" |
+| 组字中按「.」、空组句按「.」 | ✅ `你好，你好。`（全角句号） | 同一张截图里连着看 |
+| **开关关掉再按「,」** | ✅ 上屏 **`你好,`**（半角） | 同一条输入框里前两个逗号是全角、最后一个是半角 —— **同帧 A/B**；卡片绿像素在按键前测为 0（关）、按键后再测仍 0 ⇒ 中间没重建会话 |
+| 候选条与继续打字 | ✅ 按完标点还能继续组字上屏 | 金路径 `你好` → `你好你好` 全程通过 |
+| 三条路径复验（第五类改动的硬要求） | ✅ 全部通过 | **启动**：`am force-stop` 后冷启动，按逗号 → `你好，`；**切输入法**：切到搜狗再切回，按逗号 → `你好，`；**密码框**：`TestPasswordActivity` 的 textPassword 里连按 7 个键（含两个标点）⇒ `:ime` pid 前后都是 3945、`grep -c "FATAL EXCEPTION"` **0** |
+| 崩溃口径 | **0** | `grep -c "FATAL EXCEPTION"`（不是 `grep -iE "FATAL\|AndroidRuntime"`） |
+
+**没测到的，如实记**：
+- **符号层（123 页）的 `?` `;` 不走这条路。** 实测按它们上屏的是**半角** `?` `;`，
+  而 Core 的表里 `'?' => "？"`、`';' => "；"` 都在（`crates/qingjian-core/src/punctuation.rs:54-58`）
+  ⇒ 说明它们**没经过我们的标点函数**。机制是键面自己带的字形：
+  `qingshan/host/java/app/msime/android/keyboard/KeyboardLayout.java:132-137` 用
+  `chinesePunctuation ? CHINESE_NUMBER_SYMBOLS : ENGLISH_NUMBER_SYMBOLS` 与
+  `CHINESE_PUNCTUATION` / `ENGLISH_PUNCTUATION` 两组常量在**建层时**就把全角/半角选好了。
+  ⇒ 符号层的标点既不经 native（所以本轮修复对它无意义）也不杀会话（实测 pid 不变）。
+  **「!」「:」同层未测**，按同一机制推定同路，**标未核实**。
+- 空组句按「,」在**开关开着**时应当给全角 `，`（单测覆盖），本轮真机只撞到了符号层的半角，
+  字母层的"空组句 + 逗号"这一格**没有单独拍**（那张图里前一次按的是句号）。
+
+### 五、`scan_bridges` 与待办状态
+
+`调用点 62 = real 35 + 桩 27`；**杀会话 5 → 3**、降级 23 不变、不解析 1 不变。
+剩下的三个杀会话站点是 `glide`、`setNineKeyFilter`、`resetCache`（README 已知失效项第 1 条已同步）。
+- **待办 28 闭合**：`punctuate()` 现在有了调用点，开关的效力在真机上看得见（第四节第三行）。
+  上一轮那句"接线完成、真机不可观测"到此作废。
+- **待办 29 多了一条信息**：符号层的标点不经 native ⇒ 「优先显示」那三件与标点无关，
+  但**用户感知的"标点不对"可能来自符号层**，那一层的正确性取决于建层时的 `chinesePunctuation`，
+  与本轮改的引擎路径是两套。拍 (a)/(b) 之前值得知道这点。
+- 待办 27 第③条仍未查、待办 26/21 状态不变。
+
+### 六、本轮自抓（五条，都进陷阱）
+
+1. **`am force-stop app.qingshan.ime` 会把默认输入法丢掉**：冷启动复验后
+   `default_input_method` 变成了 `com.sohu.inputmethod.sogouoem/.SogouIME`，
+   于是那一张"冷启动截图"拍的是搜狗键盘（症状一样迷惑：`mInputShown=true` 但界面完全陌生）。
+   复位用 `settings put secure default_input_method app.qingshan.ime/app.msime.android.MSIMEInputService`，
+   复验读回 DIM 与 `mCurMethodId` 两项。⇒ **force-stop 之后必须先确认 DIM 再拍任何图**。
+2. **密码页会让 `screencap` 返回 0 字节**：`TestPasswordActivity` 的 textPassword 拿到焦点后，
+   `exec-out screencap -p` 退出码 0、无 stderr、**输出 0 字节**（安全表面拒拍）。
+   这既不是陷阱 61 的"息屏 15,580 B 纯黑"，也不是"命令没跑成"。
+   ⇒ 那条路径改用非视觉判据：`:ime` pid 前后一致 + `grep -c "FATAL EXCEPTION"` 0 +
+   `mIsInputViewShown`；离开密码页后 screencap 立刻恢复正常（实测）。
+3. **又被自己的前置污染了一次**：第一次跑"开关关掉按逗号"时中间夹了一步 清空，
+   结果测到的是全角（会话已重建、`:1713` 把**偏好** true 重放回来了）。
+   重做时把 清空 拿掉、并在按键前后各测一次卡片绿像素，才拿到那条同帧 A/B。
+   陷阱 64 同一族，第二次撞。
+4. **我写进源码注释的两处上游行号是错的，而且当时的判据抓不到**（⇒ 陷阱 67）：
+   `keys.rs` 那段契约注释里，"上游那条收尾注释"我写成第 1706 到 1708 行，实际在第 1699 到 1700 行；
+   "不转时把原字符接在那次 commit 后面"我写成第 1731 行，实际在第 1726 到 1728 行
+   （1731 那行是 `diagnostic` 的字符串拼接，跟结论无关）。
+   **为什么没红**：这两条当时写成 `msime-develop/crates/…` 与 `runtime.rs:…` 两种形式，
+   前者落 MISSING-PATH（**该桶根本不核行号**）、后者落 AMBIG（只按同名文件数判、且区间尾号另有登记）。
+   **暴露路径是把引用改成 `crates/…` 可核写法 + 人工回读那三行**，不是审计自己变严。
+   ⇒ 结论：**"引用属 MISSING-PATH、属既有口径"这句历轮反复出现的话，不能读成"行号被核过"**。
+5. **"只改注释所以不用重编"这句话要用字节回答**（⇒ 陷阱 68）：本轮收口动了 `keys.rs` 九行文档注释，
+   装机版 `.so` 是注释改动之前编的。我用 sha256 记下方才装机的两个 `.so`、重跑一次增量
+   `cargo ndk … build --release`、`sha256sum -c` 两个都 **OK**（字节相同）⇒ 才敢说 APK 不必重打。
+   推理（"注释不进二进制"）在这是对的，但**这条结论能被下一个人重推**才算数。
 
 ## 待办
 
@@ -5400,6 +5553,15 @@ NOTICE §5a 已加第 8 条（宿主 Java 树第 4 处破例），README 第 4 �
     重放一遍，挂起恢复不会带旧值）；**① 语义等价性没核**（`chinesePunctuation` 与
     `full_width_punctuation` 是不是同一件事、"数字后的点保持半角"那条例外在宿主侧有没有对应），
     所以**本条保持打开**，重开条件不变，剩下那半跟待办 29 的标点路径一起解。**）
+    **（现值 2026-10-18 03:35：本条按"接线 + 真机可观测"这一半闭合**——`punctuationWithContextRaw`
+    从桩转真（提交本轮，见「标点键杀会话修复」节），`punctuate()` 第一次有了调用点，
+    开关开 / 关在同一帧 A/B 实测 `你好，` vs `你好,`。上一轮"真机不可观测"那句作废。
+    **但 ① 语义等价性仍未核**，所以这条只算**部分闭合**：`chinesePunctuation` 与
+    `full_width_punctuation` 是不是同一件事没证，"数字后的点保持半角"那条例外在宿主侧
+    有没有对应也没证。剩下的那一半不再是"没接线"，而是**符号层**（123 页）的标点
+    在建层时就由 `qingshan/host/java/app/msime/android/keyboard/KeyboardLayout.java:132-137` 选定、既不经 native 也不受这个开关管
+    （实测按 `?` `;` 上屏半角）⇒ 若要"关了中文标点还出全角"这类报告彻底闭环，
+    得另立一条管符号层的待办，不是本条的重开条件。**）**
 29. **候选长按三件的连坐出路**（2026-10-17 深夜立项，**本轮代码净改动 0**）：
     `pinCandidate` / `fixCandidatePosition` / `clearCandidatePosition` 现在是 B1 那套
     「原样 View + `handled:false`」，宿主据此在 `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:6044`
@@ -5424,3 +5586,10 @@ NOTICE §5a 已加第 8 条（宿主 Java 树第 4 处破例），README 第 4 �
     估 40–80 行，是这条里最贵的一半；
     ④ 新变量：本轮真机坐实**组字中按标点键会杀会话**（`punctuationWithContext` 那两处，
     且降级横幅跨重挂不复活）⇒ 候选管理与标点这两条"引擎侧壳没接完"的路建议**并成一轮**先读上游契约。**）**
+    **（现值 2026-10-18 03:35：④ 已解——标点键转真、不再杀会话，`scan_bridges` 杀会话 5 → 3。
+    ②「优先显示」那件仍等拍板，但本轮多了一条**分流信息**：符号层（123 页）的标点
+    由 `qingshan/host/java/app/msime/android/keyboard/KeyboardLayout.java:132-137` 在**建层时**
+    按 `chinesePunctuation` 选好字形，既不经 native 也不受 `punctuate()` 那条表管
+    （实测按 `?` `;` 上屏半角，而 Core 表里 `'?' => "？"`）⇒ 用户感知的"标点不对"
+    可能来自符号层，与待办 28 的引擎路径是两套，**别把它们并成一个 bug 修**。
+    本条状态不变：仍打开、等 (a)/(b)/(c) 拍板，本轮没动 `pin` / `fix` / `clear` 三件。**）**

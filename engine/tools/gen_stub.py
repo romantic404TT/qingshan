@@ -74,6 +74,13 @@ REAL = {
     # 它与标点那件是同一处 hasDiagnostic 连坐的两个触发器，且它先抛（:1712 早于 :1713）——
     # 只做甲只是换了屏幕上那句话。理由见 PIN「戊-C 落地」一节。
     "setCharacterWidthRaw",
+    # 标点键转真（本轮）：这一件不在「降级面」里，它在**杀会话组**——宿主
+    # `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:3273` 的 catch 调 `fail()`，
+    # 桩回 ok:false 就等于「组字中按一个逗号，整个键盘降级成仅直接输入」。
+    # 上一轮把它当成「待办 28 的接线看不见」的原因，其实是同一件事的另一半：
+    # Core 的 punctuate() 没有调用点，因为标点根本没走到引擎。契约与选路差异见
+    # `engine/src/keys.rs` 的 `punctuation()`。
+    "punctuationWithContextRaw",
 }
 
 # Java 类型 -> JNI Rust 类型

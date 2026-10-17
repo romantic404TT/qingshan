@@ -663,8 +663,11 @@ pub extern "system" fn Java_app_msime_android_NativeClient_setChinesePunctuation
     // 真的写进引擎。为什么值得写、以及它在设备上为什么看不见，都记在
     // `Session::set_chinese_punctuation` 的注释里，不在这儿重复。
     //
-    // 标点面目前仍由宿主自己决定：三处消费点读的都是 Java 那个 `chinesePunctuation` 字段，
-    // 判定入口是 `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:3586`。
+    // 标点面**不再只由宿主决定**：本轮起 `punctuationWithContextRaw` 转真，组字中按标点
+    // 由我们先收尾再问 Core 转不转（见 `crate::keys::punctuation`）。Java 那个
+    // `chinesePunctuation` 字段仍然决定键面（判定入口
+    // `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:3586`），
+    // 两边靠下面这一次 `set_chinese_punctuation` 保持一致。
     //
     // 回声的形状必须是"整份 View"（`view = value(..)` 那类站点），不是 Transition
     // （`apply(..)` 那类）——混了不会崩，只会把 32 个 View 键静默读成默认值。
@@ -678,6 +681,27 @@ pub extern "system" fn Java_app_msime_android_NativeClient_setChinesePunctuation
         Some(value) => wire::ok_value(&mut env, value),
         None => wire::not_implemented(&mut env),
     }
+}
+
+/// 标点键。宿主在 `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:3273`
+/// 调它，签名 `(session, ascii, preceding)`——`preceding` 是宿主读来的光标前一个码点，
+/// **我们不用它**，选路差异与理由全写在 `crate::keys::punctuation` 的注释里。
+///
+/// 这一件从桩转真治的是：组字中按标点 ⇒ 桩回 `ok:false` ⇒ 宿主 `apply()`
+/// （同文件 `:2391`）抛 ⇒ 该调用点的 catch 调 `fail()` ⇒ 整个会话降级成「仅直接输入」。
+/// 它属「启动路径的击穿判定」第五类（杀会话组），所以改完要复验三条路径。
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_app_msime_android_NativeClient_punctuationWithContextRaw(
+    mut env: EnvUnowned<'_>,
+    _class: JObject<'_>,
+    session: jlong,
+    ascii: jint,
+    _preceding: jint,
+) -> jbyteArray {
+    logcat::init();
+    transition(&mut env, session as u64, |state| {
+        crate::keys::punctuation(state, ascii)
+    })
 }
 
 #[cfg(test)]

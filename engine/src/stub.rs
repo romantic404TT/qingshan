@@ -2,7 +2,7 @@
 //
 // 这些是非输入路径的 native 方法占位实现：签名逐位对齐 Java 声明，返回
 // {"ok":false,"error":"not_implemented"}，靠水杉 Java 自身的降级分支（fail()）失效。
-// 真实现的 23 个在 lib.rs，合计 102 个符号一个不能少。
+// 真实现的 24 个在 lib.rs，合计 102 个符号一个不能少。
 
 use jni::objects::JObject;
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jshortArray, jobject};
@@ -63,7 +63,7 @@ macro_rules! stub_boolean {
     };
 }
 
-// bytes 返回，71 个
+// bytes 返回，70 个
 stub_bytes! {
     Java_app_msime_android_NativeClient_accountSettingsApplyRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_accountSettingsExportRaw(jbyteArray _request);
@@ -108,7 +108,6 @@ stub_bytes! {
     Java_app_msime_android_NativeClient_personalDictionarySyncRaw(jbyteArray _options);
     Java_app_msime_android_NativeClient_pluginsRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_polishPromptRaw(jbyteArray _id, jbyteArray _custom1, jbyteArray _custom2, jbyteArray _custom3);
-    Java_app_msime_android_NativeClient_punctuationWithContextRaw(jlong _session, jint _ascii, jint _preceding_code_point);
     Java_app_msime_android_NativeClient_resetCacheRaw(jlong _session);
     Java_app_msime_android_NativeClient_resolveAppThemeRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_resolveThemeRaw(jbyteArray _request);
