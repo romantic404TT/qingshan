@@ -584,6 +584,20 @@ AGP 9.x 要求 Gradle 9.6+），升 AGP 会直接破坏构建。
     `touch` 之后才重编回 4,504,488 B、探针串计数 0。
     **规则：还原用 `cp`（不带 `-p`）或还原后 `touch`；"还原了"的判据是产物字节 + 产物内字符串，
     不是 `git diff`。** 快照本身仍按第 20 条用 `cp -p` 存（存快照要保时间戳，取快照不要）。
+57. **`input text` 是"直接写进 EditText"，不是"替用户打字"——它绕过了输入法**（2026-10-17 10:02 实测，代价是推翻上一轮两格测量）：
+    试用页里 `input text nihao` 之后，字段变成 **`Nihao`**（首字母还被大写），
+    **候选条一个节点都没有**。⇒ 凡是"测候选条 / 测组字 / 测引擎回执"的用例，
+    **只能用真实键位点击**（点当前布局的键，不能用另一方向的坐标表），`input text` 一律不算数。
+    这条是第 55 条的另一面：`input text` 能进字段，正是因为它没走输入法。
+    **上一轮「横屏候选条」四格里用 `input text` 的那两格因此作废**，
+    详见「旋转丢组合 + 横屏候选条合并调查」第五节 ②。
+58. **判"是不是我们引入的回归"，读上游源码就够，不要把自己框进"得装上游 APK 对照"**（2026-10-17 教训）：
+    待办第 22 条 ① 当年写着"未定：上游水杉是否同样重建会话……要定它得能装上游 APK，本机装不了
+    （包名冲突 + 证书不同）"，于是这条挂了 24 小时。本轮只做两件事就结了：
+    `sed -n '1396,1414p'` 两侧逐字比对（**行号都相同**）、两份 `AndroidManifest.xml` 里
+    5 个 `<activity>` 声明逐条比对（**0 处不同**）。
+    **规则：先问"这个结论真的需要运行时对照吗"。** 需要装机的通常是*行为*断言；
+    "这段代码是谁写的、有没有被我们改过"是*静态*问题，仓库里就有答案。
 
 ## 方案 A 实现与真机验收（2026-10-14 03:06–03:25）
 
@@ -4220,7 +4234,146 @@ clean 包 50,165,793 → **50,170,689 B（+4,896）**、`scan_bridges --summary`
 "adb 进不了编辑页的退格与超长输入"。另：README「已知失效项」第 12 条本轮按指令关闭，
 其中 ① 旋转丢组合是独立缺陷，已转出来记在待办第 26 条，**不随那条关闭而消失**。
 
+## 旋转丢组合 + 横屏候选条合并调查（2026-10-17 09:26–10:20，只读 + 真机，**代码净改动 0**）
+
+### 〇、一句话结论
+
+**同一个触发器（旋转），两套互不相干的机制。** 待办 21 与 26 并成一条查是对的，
+但结案要分开设：**①「组合丢了」是水杉上游自身的既有行为**（本轮逐字比对证实），
+**②「候选条整条不显示」是我们这边的桩抛异常点亮诊断行、一行连坐四行可见性**（我们的面，可修）。
+本轮**没改任何代码**——原因见第六节：两条里只有一条的止血是安全的。
+
+### 一、复现（试用页，两个方向都跑了）
+
+口径：`e1cdb946`，竖屏 1080×2400 / 横屏 2400×1080，包 `app.qingshan.ime`。
+旋转用 `settings put system user_rotation 1|0`（`accelerometer_rotation` 保持 0，即"锁屏 + 手动转"），
+**不是** `cmd window` 强转。组字一律用**点软键**（`input text` 不建组合，见第五节 ④）。
+
+竖屏 → 横屏（09:36:30–31，试用页在前台）：
+
+```
+09:36:30.641 WindowManager: Display id 0 rotation changed to 1 from 0 …HomeActivity
+09:36:30.757 ActivityTaskManager: Checking to restart …HomeActivity: changed=0x = 480; handles=0x3
+09:36:30.780 CursorFeedback: editorDetachFromWindow android.widget.Editor@80735a2
+09:36:30.792 qingshan: [msime_android::session] 会话挂起 键="app.qingshan.ime"，表内 1 份
+09:36:32.266 qingshan: [msime_android::session] 会话建立 322 ms（含词库载入），挂起键=Some(…)
+                        ，换回挂起上下文=true
+09:36:32.413 qingshan: [msime_android::session] 学习数据落盘 0 ms（会话销毁；…）
+```
+
+横屏 → 竖屏（09:55:09，被重建的是 `KeyboardTryoutActivity`）：同一串，且**连着两次**
+`会话建立 …换回挂起上下文=true`（09.968 与 10.295），中间夹一次 `会话销毁 + 会话挂起 表内 2 份`。
+
+**读到的现场**：IME 窗口 `Requested` 竖屏 `w=1080 h=794`、横屏 `w=2400 h=794` ⇒ **高度没变**。
+
+### 二、症状 ②「候选条整条不显示」的真实机制（本轮最值钱的一条）
+
+不是方向问题，也不是布局裁剪，是**一行连坐**：
+
+- `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:7804`
+  `boolean hasDiagnostic = InputDiagnosticPolicy.visible(diagnosticMessage);`
+- 这一真，**同时**让四行看不见：`:7812` 候选区标题行、`:7818` 工具栏行、
+  `:7832` 候选行、`:7836` 候选视口。4 秒后自动恢复
+  （`qingshan/host/java/app/msime/android/policy/InputDiagnosticPolicy.java:5`）。
+- 点亮它的就是**桩抛的异常**。本轮实地撞上的这一条走
+  `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:4462-4468`
+  `applyChinesePunctuation` → `NativeClient.setChinesePunctuation` → 桩回 `ok:false`
+  → `value()` 抛 `JSONException` → `imeDebugOverlay.showDiagnostic("标点状态未能同步到输入引擎")`
+  → 诊断行 → **候选条整条消失 4 秒**。截图上那句提示就印在键盘顶上。
+- `showDiagnostic` 与 `showMessage` 共用同一行、同一个 4 秒计时器
+  （`qingshan/host/java/app/msime/android/core/ImeDebugOverlay.java:211-236`）。
+
+**⇒ 待办 21 那句"键位在、会话活着、候选条整条不显示"被完整解释了**：键位是键盘列，
+不在那四行里；会话确实活着；候选条被诊断行连坐。旋转只是**恰好每次都会重跑一遍偏好应用**，
+所以每次都会点亮它。上一轮写的"最可能的样子"（见「横屏候选条调查」第三节末尾那段推断）
+**本轮被实测坐实，且触发器点名点到了。**
+
+### 三、症状 ①「旋转丢组合」是上游既有行为，不是我们引入的
+
+- 宿主在离开输入框时**主动把组合上屏**：`onFinishInput()`
+  （`qingshan/host/java/app/msime/android/core/MSIMEInputService.java:1396-1414`）在 `:1407`
+  调 `stop(true)`；`stop(boolean)`（同文件 `:1564`）在 `:1595-1599` 里
+  `if (finish && connection != null) apply(NativeClient.command(session, 2))` —— 命令 2 就是
+  结束组合，**字母原样进框**，随后才 `destroy(session)`。
+- 引擎侧再补一刀：`qingshan/engine/src/session.rs:492-497` 在挂起之前
+  `state.engine.clear()`，注释写明理由——"离开输入框时水杉已经把组合文本从文档里 abandon 了
+  （`MSIMEInputService.java:1602-1603`），换回来时不该凭空多出一段用户已放弃的拼音"。
+  ⇒ **方案甲-2 换回的从来不含 preedit**，`换回挂起上下文=true` 换回的是账本不是组字。
+- **与上游逐字比对（本轮实测）**：
+  ① `diff` 两侧 `onFinishInput` 整段 **行号都相同**（1396–1412），一字不差；
+  ② `qingshan/host/AndroidManifest.xml:25` 的 `KeyboardTryoutActivity` 声明与上游
+  `msime-develop/platforms/android/AndroidManifest.xml` 里那条**逐字一致**，两边都
+  **没有 `android:configChanges`** ⇒ 上游同样会在旋转时重建这个 Activity；
+  ③ 本轮把两份清单里 5 个 `<activity>` 声明逐条比对，**同名但声明不同 = 0 处**。
+  ⇒ 待办 22 ① 当年写的"未定：上游水杉是否同样重建会话"**现在有答案了：是，同样重建。**
+
+### 四、止血为什么对 `setChinesePunctuation` 安全、对 `setCharacterWidth` 不安全
+
+现成的止血形状在 `qingshan/engine/src/wire.rs:44-46`：回
+`{"ok":true,"value":{"view":<完整 View>,"handled":false}}`（B1 那四件用的就是它，
+`qingshan/engine/src/lib.rs:395-401` 的 `no_op()`）。两个桩各只有**一个调用点**，
+且 catch 体都是软失败（只 `showDiagnostic`，不调 `fail()`）⇒ 属降级类，不触击穿判定第五类。
+
+- **标点这条安全**：宿主 `:4465` 只做 `view = value(...)`，不回读任何标点键；
+  真正决定中英文标点的是 Java 自己的 `chinesePunctuation` 字段，
+  消费点在 `qingshan/host/java/app/msime/android/core/ImeLetterRows.java:677-681`、
+  `ImeBottomRow.java:324-327`、`MSIMEInputService.java:3586-3589` 三处，读的都是那个 Java 字段
+  （`3588` 那行把 `chinesePunctuation` 和 view 的 scheme/local_mode 一起传进去）。
+  ⇒ 回声不改行为，只关掉那条假警报。**约 10 行 + 1–2 条单测。**
+- **全角那条不安全，别顺手一起做**：宿主 `:4451-4453` 拿到 view 之后立刻
+  `fullWidthInput = CharacterWidthPolicy.viewIsFullWidth(view.optString(VIEW_KEY, "Halfwidth"))`
+  ——**用回声里的宽度反过来覆盖 Java 自己的状态**。而我们的 View 里
+  `character_width` **恒为 `Halfwidth`**（`qingshan/engine/src/view.rs:27` 明写
+  "阶段一只构造 Halfwidth（半角/全角由桩里的 `setCharacterWidth` 维护）"，字段在 `:99`）。
+  ⇒ 直接套 `no_op` 会让用户每设一次全角就被打回半角。**要先让 View 真的带上宽度**，
+  那是线上格式改动（`view.rs` 的序列化测试按 `Fullwidth` 拼写断言），面比"止血"大得多。
+
+### 五、对既有记录的四条更正（都本轮实测）
+
+① **窗口尺寸那条作废**：待办 22 ① 与 README 第 12 条都写着
+`req=2400x794 → 2400x683（差 111 px ≈ 候选行 + 标题行）`。本轮两侧各测一次，
+**高度恒 794，旋转不改**。那个 683 量的不是旋转，量的是"候选行与标题行当时正被隐藏"
+——也就是第二节的连坐。**这条证据要从"旋转"名下挪到"诊断行"名下。**
+
+② **`input text` 不建组合**：本轮 `input text nihao` 之后 `tryout_field` = `Nihao`、
+候选条一个节点没有。⇒ 待办 21 四格里"竖屏 `input text` 6 条候选"那两格
+**不能当候选条的证据**（那 6 个节点是别的东西）。四格里只有点键那两格算数，
+而它们本来就正常。
+
+③ **`Fjyw` 是我自己造的假线索**：我曾记录"旋转后输入框变成 `Fjyw`"。那是**拿竖屏坐标表
+去点横屏键位**的产物（键位随布局变），换成受控口径（点当前布局的真实键位）后不再出现。
+记下来免得下次又把它当缺陷。**同一类错误待办 21 那轮已经犯过一次**（拿竖屏坐标点横屏）。
+
+④ **`uiautomator` 与 `screencap` 都会滞后一帧**（环境陷阱 53/54 的第三次实测）：
+本轮 `清空` 按钮点成功后，读屏仍回旧值 `打字试试`、字节数两次一模一样；截图隔 2 秒才对上。
+**判"按没按到"要用产物或延迟后的截图，不要用一次读屏。**
+
+### 六、方案与代价（等拍板，本轮不动手）
+
+| 方案 | 面 | 破例 | 判 |
+|---|---|---|---|
+| 甲 只止血 `setChinesePunctuation` | Rust ~10 行 + 1–2 单测；`REAL` 21→22、桩 81→80；不加导出 | 无 | **建议做**，它消掉本轮唯一实地复现的可见故障 |
+| 乙 再止血 `setCharacterWidth` | 要先让 View 带真实宽度（改线上格式 + 序列化测试） | 无，但面大 | 单独一轮，别和甲并 |
+| 丙 旋转不结束组合 | 改 `onFinishInput`/`stop(true)` 的语义，需区分"转屏"与"换输入框" | **Java 破例 + 偏离上游** | 不建议：那是上游行为，且 Android 不给可靠旋转信号 |
+| 丁 给 `KeyboardTryoutActivity` 加 `configChanges` | 清单一行 | **偏离上游**，且只救我们自己的试用页 | 不建议：真实输入框在别的 App 里，救不到 |
+| 戊 把 `hasDiagnostic` 的连坐范围收窄（只遮标题行，不遮候选行） | Java 四行改判据 | **Java 破例** | 值得单独评估：它同时能治"提示一响候选条就没了"这一整族 |
+
+**推荐**：先做甲（小、无破例、消掉实测故障），戊另立一条评估，乙丙丁挂起。
+
+### 七、还欠什么
+
+- 甲落地后要复验：转屏不再弹「标点状态未能同步到输入引擎」、候选条不再消失、
+  金路径不退、`FATAL` 0。**本轮没做这三条路径复验**——因为没动代码，
+  也就没触到会话生命周期（击穿判定第五类不适用：两个 catch 体都是软失败）。
+- `setCharacterWidth` 的真实宽度语义（乙）需要先回答"我们的 View 要不要带 `Fullwidth`"，
+  那是格式决策不是 bug。
+- 待办 21 的"20:35 那次 0 候选"仍**没有直接复现**，但本轮给出的机制能解释它；
+  差别只剩"当时点亮诊断行的是哪一句"。要钉死它，需要一个能把 `diagnosticMessage`
+  当前值打印出来的观测口（现在只能靠截图上那行字）。
+
 ## 待办
+
+
 
 分发声明见仓库根的 `NOTICE.md`（上游与固定依据、GPL-3.0 §5a 修改清单、随包数据来源与许可、
 运行时第三方组件）。发布前仍未了结的是 `prd.md:821` 那行「许可证合规审查」——那是人工/法务动作，
@@ -4521,6 +4674,15 @@ clean 包 50,165,793 → **50,170,689 B（+4,896）**、`scan_bridges --summary`
     那次 0 候选最可能是"旋转重建会话"那一瞬的效应（见第 22 条 ①），继续追的成本是装一个上游对照包
     （本机装不了，包名 + 证书双冲突），收益不明。⇒ **本条冻结**：不再单独立轮，
     只有当用户给出**可复现的操作序列**（哪个应用、哪一步）时才重开。**）
+    **（现值 2026-10-17 10:20：冻结条件已满足并结案，机制点名点到了。** 用户本轮给的序列
+    （试用页组字中转屏）复现出的"键位在、会话活着、候选条整条不显示"，根因是
+    **桩抛异常点亮诊断行 → `hasDiagnostic` 一行连坐四行可见性**，4 秒自动恢复——
+    与方向无关、与布局裁剪无关。上一轮那条"最可能的样子"的推断本轮被实测坐实。
+    **同时作废两条旧证据**：① "窗口高度差 111 px ≈ 候选行 + 标题行"量的其实是"那两行当时正被隐藏"，
+    实测旋转前后 IME 高度恒 794；② 四格里用 `input text` 的那两格不算证据
+    （`input text` 根本不建组合，本轮实测字段变 `Nihao`、候选条零节点）。
+    **本条按"根因已定位、修复等拍板"结案**，方案甲（只止血标点那一件）见
+    「旋转丢组合 + 横屏候选条合并调查」第六节。**）
 22. **旋转丢组合 + 偏好读取恒失败：两条从第 21 条那一轮量出来的真缺陷**（2026-10-16 00:14 立项，**本轮没改任何代码**）。
     ① **旋转把组合冲掉**：竖屏组合中（preedit `nihao` 在、候选条在），锁到横屏之后
     `tryout_field` 变成 `nihaonihao`（**字母原样进了输入框**）、preedit 节点消失、候选条没了；
@@ -4533,6 +4695,14 @@ clean 包 50,165,793 → **50,170,689 B（+4,896）**、`scan_bridges --summary`
     **未定**：上游水杉是否同样重建会话（那段 Java 调用链是上游的，我们的改动只有
     `options.put("application", …)` 那一行），
     要定它得能装上游 APK 做对照，本机装不了（包名冲突 + 证书不同）。
+    **（现值 2026-10-17 10:20：这个"未定"已定，而且不需要装上游 APK——**读上游源码就够了**，
+    我当年把问题框成了"要装机对照"，框窄了。两侧 `onFinishInput` 整段逐字一致（行号都相同），
+    两份清单里 5 个 `<activity>` 声明逐条比对 **0 处不同**，试用页 Activity 两边都没有
+    `android:configChanges` ⇒ **上游同样转屏重建、同样丢组合**。
+    同一段里那句"IME 窗口 `req=2400x794` → `2400x683`（差 111 px ≈ 候选行 + 标题行）"**作废**：
+    本轮两侧各测一次，旋转前后 IME 高度恒 794，那 111 px 是"候选行与标题行当时正被
+    `hasDiagnostic` 连坐隐藏"的量出来的，不是旋转本身。全过程见
+    「旋转丢组合 + 横屏候选条合并调查」。**）
     ② **偏好读取恒失败**：键盘上那句 `设置读取或应用失败，保留当前设置` 每次必出，源头是
     `loadPreferencesRaw` 还在 `qingshan/engine/src/stub.rs:100` 的 85 个占位里，回
     `{"ok":false,"error":"not_implemented"}` ⇒ `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:2145`
@@ -4661,3 +4831,13 @@ clean 包 50,165,793 → **50,170,689 B（+4,896）**、`scan_bridges --summary`
     IME 窗口 `req=2400x794` → `2400x683`（差 111 px ≈ 候选行 + 标题行）。
     **本轮只是把它从 README 那条已关闭的失效项里搬出来，没有新取证、也没有方案**，
     与待办第 21 条（20:35 那次 0 候选，用户裁定冻结）是两件事。等用户给优先级再动。**）
+    **（现值 2026-10-17 10:20：复现成功，但**这条的定性要反过来**——它不是我们引入的缺陷，
+    是**水杉上游的既有行为**，本轮逐字比对坐实：
+    `onFinishInput` 整段两侧行号都相同（1396–1412），`stop(true)` 里那句
+    "离开输入框先把组合上屏"（命令 2）是上游代码；试用页 Activity 在两侧清单里
+    **都没有 `android:configChanges`**（5 个 activity 声明逐条比对，同名而声明不同 = 0 处），
+    所以上游转屏同样重建、同样丢组合。引擎侧 `session.rs` 挂起前 `engine.clear()`
+    是我们**故意**做的（注释写明：文本已被 abandon，换回来不该凭空多出一段拼音），
+    ⇒ `换回挂起上下文=true` 换回的从来是账本不是 preedit。
+    **本条不再作为"待修缺陷"挂着**，改立为"要不要偏离上游去改它"的产品决策（方案丙/戊），
+    见「旋转丢组合 + 横屏候选条合并调查」第三、六节。**）
