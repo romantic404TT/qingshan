@@ -339,6 +339,12 @@ W qingshan: [msime_android::wire] 回 ok:false: create_failed: 词库加载失�
    （**不是**品牌字破例，是功能破例；逐行理由见 `NOTICE.md` §5a 改动声明第 1 条）。
    破例数从 2 到 3 的代价：将来同步上游时这一处也要手工重放，且它改的是**建会话请求的内容**，
    比提示文案更容易和上游改动撞车。
+   **（现值 2026-10-18：本条上面那句"三处破例、共 4 行"只覆盖 `MSIMEInputService.java` 那一个文件，
+   且它写下时就已经漏了更新入口那 12 行。按 NOTICE §5a 现在的口径重算：**Java 树破例 = 3 个文件、
+   4 处、共 17 行**——`MSIMEInputService.java` 4 行（品牌字 2 + 建会话包名 2）、
+   `home/UpdateJobService.java` 12 行（11 增 1 删）、
+   `policy/InputDiagnosticPolicy.java` 1 行（本轮戊-A 方案 B：诊断行自动消失从 4 秒改 1 秒）。
+   **上面那句"共 4 行"与第 11 条末尾那句"同一份 Java 树只改了 4 行"都别再当现状引用。**）
 5. **宿主树未取上游的两个 Kotlin 插件文件**（`java/app/msime/android/account/AccountPlugin.kt`、
    `java/app/msime/android/voice/VoicePlugin.kt`）：两者仅被
    `java/app/msime/android/policy/AccountSessionRoutingPolicy.java:45` 的 javadoc

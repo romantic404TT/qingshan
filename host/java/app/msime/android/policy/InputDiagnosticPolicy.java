@@ -2,7 +2,7 @@ package app.msime.android;
 
 /** Bounds transient Engine diagnostics before they reach the keyboard surface. */
 public final class InputDiagnosticPolicy {
-    public static final long DISMISS_DELAY_MILLIS = 4_000L;
+    public static final long DISMISS_DELAY_MILLIS = 1_000L;
     public static final int MAX_LENGTH = 1_024;
 
     private InputDiagnosticPolicy() {}

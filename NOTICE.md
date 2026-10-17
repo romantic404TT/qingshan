@@ -110,6 +110,19 @@ README"——后者已在当天 18:19–18:20 出过并验过第一个发布包�
    `installedFromPlay()` 改成 `return IN_APP_UPDATES_DISABLED || PLAY_STORE.equals(installer(context));`。
    理由：`UpdateApi` 的三个地址写死水杉的发行版，我们的包点「检查更新」会白下一趟再被包名核对挡掉；
    借 Play 那道现成的门关掉三处消费（关于页药丸、两行设置、每日后台任务）。
+8. `host/java/app/msime/android/policy/InputDiagnosticPolicy.java` 改了 **1 行**（1 处）——
+   宿主 Java 树的**第 4 处破例**（2026-10-18 用户拍板「戊-A 方案 B」）：
+   `DISMISS_DELAY_MILLIS` 由 `4_000L` 改为 `1_000L`。
+   理由：键盘上任何一句诊断提示都会点亮
+   `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:7804` 那个 `hasDiagnostic`，
+   而它一真就**同时**让标题行、工具栏行、候选行、候选视口四行看不见（同文件 `:7812`、`:7818`、
+   `:7832`、`:7836` 四行判据），到自动消失才恢复。本项目还有 79 个 native 桩，其中
+   **「组字中长按候选 → 点优先显示」**这条普通用户手势会稳定撞上（B1 回 `handled:false`，
+   宿主据同在 `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:6044`
+   弹「当前候选不支持此操作」）。按等级收窄判据要逐个判 32 个提示调用点、且**打不中现状**
+   （评估全文见 `third-party/PIN.md`「待办 27 实验①② + 全角真机数 + 戊-A 评估」第五节），
+   缩短窗口是 1 行的最小破例面。**代价如实记**：真实失败提示的可读时间也一并从 4 秒缩到 1 秒。
+   导出符号与 `deferred` 语义都不受影响（`engine/tools/verify_symbols.py` 双向差集仍为空）。
    **没动 `UpdateApi.java`，也没删 Play 来源判定**（翻回 `false` 即恢复原行为）。
    其余 392 个 Java 文件逐字未改。
 
