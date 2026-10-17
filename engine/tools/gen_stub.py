@@ -61,6 +61,19 @@ REAL = {
     # 注意这是**一个**导出：宿主只有 mobileClipboardHistoryRaw 一个入口，六个操作靠
     # 请求里的 action.operation 分派，不存在 loadClipboardHistoryRaw 这种符号。
     "mobileClipboardHistoryRaw",
+    # 止血（甲）：青简 Core 没有标点开关（全仓 grep chinese_punctuation 0 命中），
+    # 回声当前 View 让宿主不再抛异常点亮诊断行——那句提示会连坐隐藏候选条四行 4 秒。
+    # 只回声、不改引擎状态；决定标点面的是宿主自己的 chinesePunctuation 字段。
+    # **setCharacterWidth 故意不一起做**：宿主会用回声里的宽度反向覆盖 Java 状态，
+    # 而我们的 View 里 character_width 恒为 Halfwidth。理由见 PIN
+    # 「旋转丢组合 + 横屏候选条合并调查」第四节。
+    "setChinesePunctuationRaw",
+    # 戊-C（甲的真正配套）：会话记住宽度、build_view 报真值，回声诚实。
+    # 宿主 `MSIMEInputService.java:4451-4453` 会用回声里的宽度反向覆盖它自己的 fullWidthInput，
+    # 所以**不能**照 naive 那样回恒半角的 View（那会把用户的全角打回半角）。
+    # 它与标点那件是同一处 hasDiagnostic 连坐的两个触发器，且它先抛（:1712 早于 :1713）——
+    # 只做甲只是换了屏幕上那句话。理由见 PIN「戊-C 落地」一节。
+    "setCharacterWidthRaw",
 }
 
 # Java 类型 -> JNI Rust 类型

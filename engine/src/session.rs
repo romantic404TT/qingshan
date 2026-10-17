@@ -137,6 +137,12 @@ pub struct Session {
     pub candidates: Vec<Candidate>,
     /// Java 的 `focusRaw(session, focused)` 设置，原样写进 `View.focused`。
     pub focused: bool,
+    /// Java 的 `setCharacterWidthRaw(session, fullwidth)` 设置，原样写进
+    /// `View.character_width`（戊-C）。
+    ///
+    /// 存**会话级**而不是进程级：宿主每次建会话都在 `MSIMEInputService.java:1712` 用
+    /// `fullWidthPreference` 重新推一遍，所以新会话第一帧就是对的，不需要跨会话记住了什么。
+    pub fullwidth: bool,
     /// 上次学习数据落盘的时刻。会话创建即计时，所以头 60 秒内的上屏只在 destroy 时落。
     last_flush: Instant,
     /// 自上次落盘后有没有新的上屏（`note_commit` 置位）。
@@ -156,6 +162,7 @@ impl Session {
             page_size: MAX_CANDIDATE_PAGE_SIZE,
             candidates: Vec::new(),
             focused: false,
+            fullwidth: false,
             last_flush: Instant::now(),
             dirty: false,
         }

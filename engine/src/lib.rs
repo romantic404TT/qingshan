@@ -535,6 +535,7 @@ fn snapshot_of(state: &Session, id: u64) -> view::Snapshot<'_> {
         page_size: state.page_size,
         page_count: state.page_count(),
         highlighted: state.highlighted,
+        fullwidth: state.fullwidth,
         candidates: &state.candidates,
     }
 }
@@ -611,6 +612,71 @@ fn files_dir(resources: &Path) -> PathBuf {
     }
 }
 
+/// 「回声当前 View」这一类应答的应答体：**整个 `value` 就是 View 本身**。
+///
+/// 宿主那两个消费点写的都是 `view = value(..)`（
+/// `host/java/app/msime/android/core/MSIMEInputService.java:4451` 与 `:4465`），
+/// 和 no_op 那五件走的 `apply(..)` 不是同一种形状——后者读的是 `value.view` 与 `value.handled`。
+/// 两种形状混用**不会崩**：把 View 套一层再回，宿主拿到的 `view` 里 32 个键全落到默认值上，
+/// 于是方案、`local_mode`、候选面一起读成"没有会话"，键盘外观静默错掉。所以形状单独成函数、
+/// 单独有测试。
+fn echo_view_body(view: &crate::view::View) -> Option<serde_json::Value> {
+    serde_json::to_value(view).ok()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_app_msime_android_NativeClient_setCharacterWidthRaw(
+    mut env: EnvUnowned<'_>, _class: JObject<'_>, session: jlong, fullwidth: jboolean,
+) -> jbyteArray {
+    // 戊-C：把宽度**记进会话**再回声。宿主 `MSIMEInputService.java:4451-4453` 拿到回声后会用
+    // `character_width` 反向覆盖它自己的 `fullWidthInput`——回声诚实，那个覆盖才是恒等操作。
+    // 刻意不做的"naive 版"是：不记状态、回一个恒半角的 View，那等于每次建会话都把用户的全角打回半角。
+    //
+    // 治的是哪一件：桩回 `ok:false` ⇒ `value()` 抛 ⇒ 同文件 `:4454-4456` 弹
+    // 「全角状态未能同步到输入引擎」⇒ 点亮 `hasDiagnostic`（`:7804`）⇒ 标题行 / 工具栏行 /
+    // 候选行 / 候选视口四行一起隐藏 4 秒。它与标点那件是**同一处连坐的两个触发器**，
+    // 而且它先抛（`:1712` 早于 `:1713`），所以只做甲只是换了屏幕上那句话。
+    let id = session as u64;
+    let built = with_session(id, |state| {
+        state.fullwidth = fullwidth;
+        build_view(state, id)
+    });
+    match built.and_then(|view| echo_view_body(&view)) {
+        Some(value) => wire::ok_value(&mut env, value),
+        None => wire::not_implemented(&mut env),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_app_msime_android_NativeClient_setChinesePunctuationRaw(
+    mut env: EnvUnowned<'_>, _class: JObject<'_>, session: jlong, _enabled: jboolean,
+) -> jbyteArray {
+    // 止血：青简 Core 里没有标点开关（`projects/qingjian` 全仓 grep `chinese_punctuation` 0 命中），
+    // 上游那份 `client-core` 有 `set_chinese_punctuation_enabled`，我们链的这份没有，所以这里
+    // **只回声当前 View**，不 advance、不 requery、不改引擎状态。
+    //
+    // 为什么回声就够：真正决定中英文标点面的是宿主自己的 `chinesePunctuation` 字段，
+    // 消费点在 `ImeLetterRows.java:677-681`、`ImeBottomRow.java:324-327`、
+    // `MSIMEInputService.java:3586-3589` 三处，读的都是那个 Java 字段（`3588` 那行把 view 的
+    // scheme / local_mode 和它一起传进去，view 只要还是"当前这份 View"结论就不变）。
+    //
+    // 治的是哪一件：桩回 `ok:false` ⇒ 宿主 `value()` 抛 ⇒ `MSIMEInputService.java:4462-4468`
+    // 弹「标点状态未能同步到输入引擎」⇒ 点亮 `hasDiagnostic`（同文件 `:7804`）⇒
+    // 标题行 / 工具栏行 / 候选行 / 候选视口四行一起隐藏 4 秒。转屏每次重跑偏好应用都会踩一遍。
+    //
+    // **`setCharacterWidth` 故意不做同样的事**：宿主在 `:4451-4453` 会拿回声里的宽度反向覆盖
+    // Java 自己的 `fullWidthInput`，而我们的 View 里 `character_width` 恒为 `Halfwidth`
+    // （`view.rs:27` 明写）⇒ 直接回声会把用户的全角打回半角。理由见 PIN
+    // 「旋转丢组合 + 横屏候选条合并调查」第四节。
+    logcat::init();
+    let id = session as u64;
+    let built = with_session(id, |state| build_view(state, id));
+    match built.and_then(|view| echo_view_body(&view)) {
+        Some(value) => wire::ok_value(&mut env, value),
+        None => wire::not_implemented(&mut env),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -657,5 +723,35 @@ mod tests {
                 "{text} 没写 learning，默认该是允许"
             );
         }
+    }
+
+    /// 标点回声的**形状**：整个 `value` 就是 View 本身，不带 `handled`、不再套一层 `view`。
+    /// 这条锁的是"顺手抄 no_op 那五件的形状"——抄了不崩、不报错，只会让宿主把 View 的
+    /// 32 个键全读成默认值（方案变 -1、`local_mode` 变 none、候选面跟着错），属静默降级。
+    #[test]
+    fn punctuation_echo_is_the_view_itself_not_a_transition_envelope() {
+        let view = crate::view::mock_view();
+        let echoed = echo_view_body(&view).expect("View 一定序列得出来");
+        let object = echoed.as_object().expect("回声的顶层必须是对象");
+        assert!(
+            object.get("handled").is_none(),
+            "标点回声走 `view = value(..)`，不是 Transition"
+        );
+        assert!(object.get("view").is_none(), "不该把 View 再套一层");
+        assert_eq!(
+            object.get("session").and_then(serde_json::Value::as_u64),
+            Some(view.session),
+            "会话号要原样带回去"
+        );
+        assert_eq!(
+            object.get("scheme").and_then(serde_json::Value::as_u64),
+            Some(view.scheme as u64)
+        );
+        // 判别器：把上面任何一处改成 `wire::no_op_body(..)`，这几条就会红。
+        assert_ne!(
+            echoed,
+            wire::no_op_body(&view),
+            "两种形状必须不同，相同就说明有人抄错了"
+        );
     }
 }

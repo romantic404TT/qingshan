@@ -2,7 +2,7 @@
 //
 // 这些是非输入路径的 native 方法占位实现：签名逐位对齐 Java 声明，返回
 // {"ok":false,"error":"not_implemented"}，靠水杉 Java 自身的降级分支（fail()）失效。
-// 真实现的 21 个在 lib.rs，合计 102 个符号一个不能少。
+// 真实现的 23 个在 lib.rs，合计 102 个符号一个不能少。
 
 use jni::objects::JObject;
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jshortArray, jobject};
@@ -63,7 +63,7 @@ macro_rules! stub_boolean {
     };
 }
 
-// bytes 返回，73 个
+// bytes 返回，71 个
 stub_bytes! {
     Java_app_msime_android_NativeClient_accountSettingsApplyRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_accountSettingsExportRaw(jbyteArray _request);
@@ -116,8 +116,6 @@ stub_bytes! {
     Java_app_msime_android_NativeClient_resourcePackInstallRaw(jbyteArray _request, jobject _listener);
     Java_app_msime_android_NativeClient_resourcePacksRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_restoreDefaultPreferencesRaw(jbyteArray _directory, jlong _expected_revision);
-    Java_app_msime_android_NativeClient_setCharacterWidthRaw(jlong _session, jboolean _fullwidth);
-    Java_app_msime_android_NativeClient_setChinesePunctuationRaw(jlong _session, jboolean _enabled);
     Java_app_msime_android_NativeClient_setNineKeyFilterRaw(jlong _session, jboolean _single_character, jbyteArray _strokes);
     Java_app_msime_android_NativeClient_setNineKeyModeRaw(jlong _session, jboolean _enabled);
     Java_app_msime_android_NativeClient_setPrivateSessionRaw(jlong _session, jboolean _enabled);

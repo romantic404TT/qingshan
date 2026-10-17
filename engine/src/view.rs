@@ -24,8 +24,8 @@ use serde::Serialize;
 /// types.rs:71-75。整个 View 里**唯一**不带 `rename_all` 的枚举，所以值是 PascalCase
 /// （`"Fullwidth"` / `"Halfwidth"`），其余字段一律 snake_case，抄的时候最容易错在这里。
 ///
-/// 阶段一只构造 `Halfwidth`（半角/全角由桩里的 `setCharacterWidth` 维护），
-/// `Fullwidth` 的拼写仍要留着：它属于线上格式，序列化测试按它断言。
+/// 戊-C 之后两个变体都会构造：`setCharacterWidthRaw` 记进会话、`build_view` 按它报真值，
+/// 因为宿主拿这份回声**反向覆盖**它自己的 `fullWidthInput`——恒半角的回声等于把全角打回半角。
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum CharacterWidth {
@@ -165,6 +165,8 @@ pub struct Snapshot<'a> {
     pub page_size: usize,
     pub page_count: usize,
     pub highlighted: usize,
+    /// 会话记的半角/全角，原样进 `View.character_width`（戊-C）。
+    pub fullwidth: bool,
     pub candidates: &'a [qingjian_core::Candidate],
 }
 
@@ -185,9 +187,14 @@ pub fn build_view(source: &Snapshot) -> View {
         nine_key_single_character: false,
         nine_key_strokes: String::new(),
         touch_keyboard_layout: TouchKeyboardLayout::TwentySixKey,
-        // 半角/全角由 Java 的 `setCharacterWidth` 维护，而那个入口在桩里，
-        // 所以 Core 侧恒报半角；Java 收到后会用自己的偏好覆盖显示。
-        character_width: CharacterWidth::Halfwidth,
+        // 戊-C：报会话记的真值，不再恒半角。宿主 `MSIMEInputService.java:4451-4453` 会
+        // 把回声里的宽度**反向覆盖**它自己的 `fullWidthInput`，所以回声必须是诚实的——
+        // 恒半角的回声等于把用户的全角设置打回半角（那就是"naive 回声"，上一轮已判定不做）。
+        character_width: if source.fullwidth {
+            CharacterWidth::Fullwidth
+        } else {
+            CharacterWidth::Halfwidth
+        },
         microsoft_shuangpin: false,
         shuangpin_profile: String::new(),
         answered_by_pinyin_fallback: false,
@@ -333,13 +340,17 @@ pub fn output_context() -> OutputContext {
     }
 }
 
+/// 给别的模块的单测用（`lib.rs` 要拿它断言应答形状）。填字段的意义在下面那份注释里。
+#[cfg(test)]
+pub(crate) use tests::mock_view;
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::Value;
 
     /// 手工填满 32 个字段：这样以后结构增删字段会直接编译失败，不会悄悄漏。
-    fn mock_view() -> View {
+    pub(crate) fn mock_view() -> View {
         View {
             scheme: 1,
             chinese_text: true,
@@ -571,6 +582,41 @@ mod tests {
         }
     }
 
+    /// 戊-C：`View.character_width` 必须跟着会话记的宽度走，不能再恒半角。
+    /// 宿主拿到回声后会用它**反向覆盖**自己的 `fullWidthInput`
+    /// （`qingshan/host/java/app/msime/android/core/MSIMEInputService.java:4451-4453`），
+    /// 所以恒半角的回声等于每次建会话都把用户的全角打回半角。
+    #[test]
+    fn character_width_follows_the_session_flag() {
+        fn snapshot<'a>(fullwidth: bool, all: &'a [qingjian_core::Candidate]) -> Snapshot<'a> {
+            Snapshot {
+                id: 7,
+                generation: 5,
+                focused: true,
+                english: false,
+                editing: String::new(),
+                caret: 0,
+                page: 0,
+                page_size: 10,
+                page_count: 1,
+                highlighted: 0,
+                fullwidth,
+                candidates: all,
+            }
+        }
+        let none: Vec<qingjian_core::Candidate> = Vec::new();
+        assert_eq!(
+            serde_json::to_value(build_view(&snapshot(true, &none)).character_width).unwrap(),
+            "Fullwidth",
+            "会话记了全角就要报全角；报成半角会覆盖掉用户的设置"
+        );
+        assert_eq!(
+            serde_json::to_value(build_view(&snapshot(false, &none)).character_width).unwrap(),
+            "Halfwidth",
+            "没要求全角时保持半角，与戊-C 之前逐字相同"
+        );
+    }
+
     #[test]
     fn only_the_current_page_reaches_the_host() {
         let all: Vec<qingjian_core::Candidate> =
@@ -587,6 +633,7 @@ mod tests {
             page_size: 10,
             page_count: 3,
             highlighted: 12,
+            fullwidth: false,
             candidates: &all,
         });
         let index: Vec<usize> = second.candidates.iter().map(|c| c.id.index).collect();
@@ -608,6 +655,7 @@ mod tests {
             page_size: 10,
             page_count: 3,
             highlighted: 20,
+            fullwidth: false,
             candidates: &all,
         });
         assert_eq!(third.candidates.len(), 5, "末页只有 25-20=5 个");
