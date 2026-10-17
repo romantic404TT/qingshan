@@ -223,6 +223,16 @@ pub fn punctuation(session: &mut Session, ascii: jint) -> CommandOutcome {
     }
 }
 
+/// `resetCache` 的落点：把整张候选缓存丢掉。`run_transition` 紧接着 `advance()` 与
+/// `requery()`，所以返回时代次已换、表按当前组字重建 —— 宿主那句「已清除候选缓存」到此为真。
+///
+/// 上游同名动作还顺带释放日文字典的进程级缓存（`crates/engine/src/ime/mod.rs:624`），
+/// 我们没有那一层缓存，语义到这张表为止。
+pub fn reset_cache(session: &mut Session) -> CommandOutcome {
+    session.candidates.clear();
+    CommandOutcome::Consumed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -478,5 +488,19 @@ mod tests {
             ),
             "超出 char 范围的入参也不能 panic"
         );
+    }
+
+    /// `resetCache` 要的语义：**整张**候选缓存真的被丢掉，不是"回个 ok 就算做了"。
+    /// 判别器两条都实跑过：函数体换成 `let _ = &mut session.candidates;` ⇒ 最后那条红
+    /// （`缓存里一条都不该留`）；返回值换成 `CommandOutcome::Passthrough` ⇒ 第二条红。
+    #[test]
+    fn reset_cache_drops_the_whole_candidate_table() {
+        let mut session = session(3);
+        assert_eq!(session.candidates.len(), 3, "夹具：先要有一张非空缓存");
+        assert!(
+            matches!(reset_cache(&mut session), CommandOutcome::Consumed),
+            "要回 Consumed，`run_transition` 才会推进代次并按当前组字重建"
+        );
+        assert!(session.candidates.is_empty(), "缓存里一条都不该留");
     }
 }

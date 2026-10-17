@@ -74,6 +74,15 @@ REAL = {
     # 它与标点那件是同一处 hasDiagnostic 连坐的两个触发器，且它先抛（:1712 早于 :1713）——
     # 只做甲只是换了屏幕上那句话。理由见 PIN「戊-C 落地」一节。
     "setCharacterWidthRaw",
+    # 剩余三个杀会话站点（本轮）。resetCache 是**真实现**：候选缓存就是 Session.candidates，
+    # 丢掉再由 run_transition 重建，宿主那句「已清除候选缓存」才不是空话（keys.rs::reset_cache）。
+    # glide 与 setNineKeyFilter 是**止血、不是实现**：Core 无滑行解码、无 T9 与笔顺数据，
+    # 且后者在青杉当前不可达（View 恒 nine_key=false ⇒ 九键面板永不出现）。
+    # 三件的调用点全把 apply() 的返回值丢掉，所以 handled:false 安全（与标点键那轮不同）。
+    # 理由与可达性逐条见 PIN「剩余 3 个杀会话站点」一节。
+    "resetCacheRaw",
+    "glideRaw",
+    "setNineKeyFilterRaw",
     # 标点键转真（本轮）：这一件不在「降级面」里，它在**杀会话组**——宿主
     # `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:3273` 的 catch 调 `fail()`，
     # 桩回 ok:false 就等于「组字中按一个逗号，整个键盘降级成仅直接输入」。

@@ -684,6 +684,27 @@ AGP 9.x 要求 Gradle 9.6+），升 AGP 会直接破坏构建。
     `sha256sum -c` 两个都 **OK** ⇒ 字节相同 ⇒ **不必重打 APK、不必重装**。
     **规则**：任何"只改注释/文档所以不用重编"的声明都配一次这种复验；
     代价是一次增量编译（秒级），换来的是这条结论能被下一个人重推。
+69. **按上一轮记的坐标连点，会跨应用漂移**（2026-10-18 04:46 实测，**代价是误触进了一次用户的微信**）：
+    我从自己的设置页 `keyevent 4` 退出去之后，前台换成了微信，而连点用的还是我们应用的坐标
+    （`78,186` / `540,1018` / `480,2320` / `75,1680`）⇒ 打开的是**别人的联系人资料页**。
+    没有发出任何内容（只开页 + 原路 BACK 退出），但这不是"测试环境里的小失误"，是越界操作。
+    **规则**：① 每一段连点开始前先 `dumpsys window | grep mCurrentFocus` 断言包名是自己人，
+    不匹配就停手；② 坐标一律从**当轮** `uiautomator dump` 的节点 bounds 现取（见陷阱 70），
+    不重用上一轮记的数；③ 跨页导航（尤其 `keyevent 4` 之后）必须重新断言焦点。
+70. **`uiautomator dump --windows` 能读到自绘键位的 bounds——旧记录说读不到**（2026-10-18 04:30 实测）：
+    本轮 `q` `w` `123` `#+=` `！` `：` 与六个候选格**全部有节点、有 bounds**
+    （例：候选「你好」`[0,1648][211,1723]`，键 `i` 中心 `(805,1830)`）。
+    而旧记录（本文件与项目记忆）写的是「IME 窗口只有 21 个节点，键位行仍是自绘无节点，
+    只能用 screencap 反推坐标」。**至少在本机本版本，那句不再成立**。
+    **规则**：量坐标先试 `uiautomator dump --windows` 取节点 bounds，取不到再退回截图；
+    并且**每轮重取**——本轮就是靠现取避免了两次按旧坐标打错层。
+71. **`input keycombination` 注入的修饰键自己会先跑一次 `command(2)`**（2026-10-18 04:34 实测）：
+    硬件和弦 Ctrl+Shift+Alt+C 的判定在
+    `host/java/app/msime/android/core/MSIMEInputService.java:3959-3964`，
+    它**故意排在**"带 Ctrl/Alt/Meta 就交回应用"那条分支之前；但注入是逐个键下发的，
+    **第一个 Ctrl 的 DOWN 本身就落进那条交回分支**（`:3966-3972` 里先 `command(2)`）⇒ 组字被结束。
+    后果：测硬件和弦时"和弦前正在组字"这个前置会被注入自己破坏，
+    **不能同时断言"组字还在"**；要判和弦有没有生效，看的是"之后还能不能重新组字出候选"。
 
 ## 方案 A 实现与真机验收（2026-10-14 03:06–03:25）
 
@@ -4992,6 +5013,145 @@ NOTICE §5a 已加第 8 条（宿主 Java 树第 4 处破例），README 第 4 �
    `cargo ndk … build --release`、`sha256sum -c` 两个都 **OK**（字节相同）⇒ 才敢说 APK 不必重打。
    推理（"注释不进二进制"）在这是对的，但**这条结论能被下一个人重推**才算数。
 
+## 剩余 3 个杀会话站点清零 + 符号层补测 + 标点语义核对（2026-10-18 04:05–05:05，**host/java 零改动**）
+
+用户拍板：本轮把 `scan_bridges` 剩下的三个杀会话站点打到零。开始前现值：
+调用点 62 = real 35 + 桩 27，**杀会话 3**（`glide` / `setNineKeyFilter` / `resetCache`）。
+
+### 一、先推翻本轮任务书里的一条前提：`handled:false` 在这三个站点是安全的
+
+任务书把上一轮的结论「不要回 `handled:false`」当成通用禁令搬了过来。**它不适用于这三件**，
+理由要看调用点读不读返回值：
+
+| 站点 | 宿主调用点 | 读 `apply()` 的布尔吗 |
+|---|---|---|
+| `glide` | `host/java/app/msime/android/core/MSIMEInputService.java:3145` | **不读**——`void glide(String request)`，`apply(..)` 的结果直接丢 |
+| `setNineKeyFilter` | 同文件 `:3158` | **不读**——同样 `void` |
+| `resetCache` | 同文件 `:5961`（在 `runMaintenanceChord` 里，方法起于 `:5958`） | **不读**——`apply(..)` 后紧接 `showDiagnostic`，返回值被丢 |
+
+而 `apply()` 本体只在最后一行用 `handled`（同文件 `:2426` 的 `return strictBoolean(result, "handled")`），
+中间不分支。上一轮标点键之所以不能回 false，是因为那条路上
+`boolean handled = punctuationKey ? punctuation(output) : character(output);`（`:3223`）
+**把布尔读了出来**，false 会触发 `DeclinedKeyPolicy.finishesComposition` → 命令 9。
+⇒ **规则要写成"看调用点读不读返回值"，不是"永远别回 false"**。本轮三件都回 `handled:false`，
+没有一处引出命令 9。
+
+### 二、三个站点的契约与判定（逐条回源）
+
+| 站点 | 上游契约 | 青简 Core 能力 | 判定 |
+|---|---|---|---|
+| `glide` | `crates/host-api/src/ffi/input.rs:642`，请求是 JSON `{"keys":[[x,y]×26],"key_width","key_height","points":[[x,y] 或 [x,y,ms],…]}`；`glide_action` 在 `:658` 校验（26 键、点数 2..1024、坐标有限），过了就 `dispatch(Action::Glide{…})` | **0 命中**（`grep -rni glide crates/` 在 qingjian 全仓 = 0，正样例是 `fn punctuate` 命中 1） | **乙**：不必改 Core（可以自己把点列解码成键序列再喂 `push`），但那是自建滑行解码器，≥100 行新功能 |
+| `setNineKeyFilter` | `crates/host-api/src/ffi/input.rs:603`，`(single_character, strokes, length)`，上限 `NINE_KEY_STROKE_LIMIT = 64`（`:631`），过了 `dispatch(Action::SetNineKeyFilter{…})` | `nine_key` / `ninekey` / `stroke` 在 `qingjian-core/src` 全 **0 命中**（`t9` 那 20 个命中是词频 `\t9000` 的假阳性，已用正样例证伪） | **丙**，且**站点在青杉不可达**（见下） |
+| `resetCache` | `crates/host-api/src/ffi/session.rs:194` → `crates/engine/src/host/session.rs:302` → `crates/engine/src/ime/mod.rs:624`（丢缓存的候选表；日文那条还顺带释放进程级字典强引用） | 我们的"候选缓存"就是 `Session.candidates`（`qingshan/engine/src/session.rs:136` 原话：「最近一次 `query()` 得到的整表」） | **甲**：真实现 < 20 行 |
+
+**`setNineKeyFilter` 不可达的机制**（这条比"桩"更重要）：键盘布局是**从 View 算出来的**，
+不是从偏好——`host/java/app/msime/android/core/MSIMEInputService.java:3770-3776` 的
+`touchLayout(value)` 读 `view.nine_key` 与 `view.touch_keyboard_layout`，
+而我们 `qingshan/engine/src/view.rs:184` 恒 `nine_key: false`、`:189` 恒 `TwentySixKey`
+（`:358`/`:363` 是填满 32 字段那条测试里的同值）。⇒ 九键面板永不出现，
+`ImeNineKeyPanel.java` 那五个调用点（`:271`、`:291`、`:300`、`:306`、`:311`）全是死路。
+**注意设置页里确实有「中文键盘 = 26 键 / 九键」这一行**（本轮真机在设置页看见了），
+所以用户能提这个要求而引擎不答应——这是「View 的 12 个零值字段」那条大债的一个具体出口，
+另立待办，不在本轮。
+
+### 三、落地形状
+
+- **`resetCache` 真实现**：`qingshan/engine/src/keys.rs` 新增 `reset_cache()`——
+  `session.candidates.clear()` + `CommandOutcome::Consumed`。`run_transition` 紧接着
+  `advance()` 与无条件 `requery()`，所以返回时代次已换、表按当前组字重建。
+  宿主那句「已清除候选缓存」（`:5962`）**到此是真话**——它本来就无条件播报，
+  我们把它变成兑现的。
+- **`glide` / `setNineKeyFilter` 止血**：走 B1 那件共用的 `no_op`（`ok:true` + 当前 View +
+  `handled:false`，**不带 diagnostic**，免得白点亮一次连坐）。与宿主注释
+  「引擎不收（handled=false）时什么也不输入」（`:3144`）逐字一致。
+  `no_op` 的文档注释从"候选长按四件"改成"止血站点共用…加本轮两件"，六个调用点行号列在里面。
+- `gen_stub.py` 的 `REAL` 加三条 ⇒ **27 real / 75 桩 = 102**，符号两 ABI 仍 102/102 双向差集空。
+- 单测 **105 → 107**：`reset_cache_drops_the_whole_candidate_table`（keys.rs）+
+  `reset_cache_transition_advances_and_carries_no_diagnostic`（lib.rs）。
+  **判别器两条都实跑过**：函数体换成"什么都不清" ⇒ keys.rs 那条红（`缓存里一条都不该留`）；
+  返回值换成 `Passthrough` ⇒ 两条都红。
+  **顺带抓到自己测试的一条假强度**：lib.rs 那条里"表非空"的断言**抓不到"没清"**——
+  `requery()` 无条件重建，清没清都会非空；而且 panic 会终止测试，所以注释里原本写的
+  "三条一起红"是错的（实际只有第一条跑到）。已把注释改成实测的样子。
+- 闸门：`cargo test --release` **107 passed / 0 failed**；`cargo fmt -- --check`
+  **26 hunk、非 `lib.rs` 0**（23 → 26 的 +3 就是三个新导出的紧凑签名，同一套刻意保留的写法；
+  中途我手写的 `assert!` 一度多出第 27 个 hunk，手工排成 rustfmt 形状后归零，**没跑写模式**）；
+  `.so` arm64 4,510,152 → **4,512,264（+2,112）**、x86_64 4,768,176 → **4,770,144（+1,968）**；
+  APK clean 50,193,289 → **50,195,257（+1,968）**；`verify_apk` 包内容/符号/清单全 True；
+  `scan_bridges` 调用点 62 = **real 38 + 桩 24**，**杀会话 3 → 0**（`--json` 的 `counts` 里
+  那个键整个消失 ⇒ 用 JSON 证 0，不靠"整行没印"），降级 23 不变、不解析 1 不变。
+
+### 四、真机（`e1cdb946`，`install -r` 未 `pm clear`）
+
+| 项 | 结果 | 口径 |
+|---|---|---|
+| `resetCache` 和弦 | **触发成功、会话活着** | `input keycombination 113 59 61 29`（Ctrl+Shift+Alt+C）。组字中候选 7 个 + 展开 → 和弦后候选行消失（宿主播报「已清除候选缓存」点亮 `hasDiagnostic`）→ 约 2 秒后恢复；再组一次字 **候选 7 个 + 展开回来** ⇒ 走的是成功路径而不是 `fail()` |
+| 和弦的注入副作用 | **不是我们的回归** | 第一个修饰键（Ctrl）自己就命中 `:3966-3972` 那条"带 Ctrl 就交回应用"的分支，里面先 `command(2)` ⇒ 组字被结束。所以"和弦前正在组字"这个前置会被注入本身破坏；本轮因此**不同时断言组字还在** |
+| `glide` | **未核实** | 把设置里「滑行输入」打开（默认 false，`settings/AndroidLocalSettings.java:183`）后注入横扫，键盘上**没出现滑行轨迹**、字段没变——注入的 swipe 被编辑器的选中文本手势吃掉了（现场表现为弹出 全选/选择 工具条）。⇒ 判"入口需真手指"，本轮不下结论 |
+| `setNineKeyFilter` | **无真机路径** | 站点不可达（第二节），静态判据：`scan_bridges` 已转 real + 信封与 B1 同一份代码 |
+| 三条路径 | **两条过、一条半过** | **启动**：`force-stop` 后 DIM 又被抢走（陷阱 65 第二次撞到），复位后组字 7 候选、按逗号 → `你好，`，新 pid 27026；**切输入法**：切搜狗再切回，同样 `你好，`；**密码页**：第一个 EditText（普通框）打 `nihao`+逗号 → `你好，`、pid 前后 27026 不变、`FATAL` 0；**第二个框（疑似 textPassword）本轮没能用注入点唤起键盘（`mInputShown=false`）⇒ 那一格标未核实** |
+| 金路径 | ✅ | 清空 → `nihao` → 空格 → `你好` → 再 `nihao` → 空格 → `你好你好`；候选点选 → `你好`；`grep -c "FATAL EXCEPTION"` **0** |
+
+### 五、符号层补测：**撤回上一轮那条"符号层一律半角"**
+
+上一轮（`bdb190a` 那节第四节）写了「实测按 `?` `;` 上屏的是半角 ⇒ 符号层的标点不经 native」。
+本轮按同一把尺子（节点文本 + 开关绿像素）重测，**结论不成立**：
+
+- 开关状态实测为**开**：功能面板里「中文标点」那一格绿像素 **2808**（上一轮实测的"开"区间 2715–2808），
+  「全角」那一格 0。
+- 123 页的标点字形就是**全角** `：；？！`（uiautomator 节点文本），按 `！` 与 `：` 上屏
+  `'！：'` —— **全角**。
+- 之后回字母层组字 `nihao` → 候选 7 个 + 展开 ⇒ 符号层按键**不杀会话**（这条上一轮也对）。
+⇒ 撤回的不是"不经 native"（那条仍成立：字形在建层时由
+  `qingshan/host/java/app/msime/android/keyboard/KeyboardLayout.java:132-137` 决定），
+  而是**"一律半角"**。最可能的解释是上一轮那两次按键落在**第二符号页 `#+=`**（本轮没测到那页的字形，
+  标未核实），或当时开关处于关闭态。**下一轮要补的就一格：`#+=` 页的字形集合。**
+
+### 六、`chinesePunctuation` vs `full_width_punctuation`：**不等价，但接线没接错**
+
+待办 28 剩下的那一半，本轮核完，四条事实：
+
+1. **作用面不同**：宿主的 `chinesePunctuation` 管两件事——(a) **键面字形**
+   （`host/java/app/msime/android/keyboard/ChineseSymbolFaces.java:26` 的
+   `chinesePunctuation && !dedicatedEnglish && scheme != 3 …`，本轮真机实测：开着 123 页全角、
+   关掉变半角），(b) 上屏要不要中文标点。Core 的 `full_width_punctuation` **只有 (b) 里
+   `punctuate()` 这一条**（唯一消费点 `crates/qingjian-core/src/engine/composing.rs:20`）。
+   我们接的是 (b) 那一条 ⇒ **没有把"中文标点开关"错映射成"全角转换开关"**。
+2. **递过去的值比宿主自己用的值宽**：宿主真正"发中文标点"的判据是 `sendsChinesePunctuation()`
+   （`MSIMEInputService.java:3586-3588`）= `chinesePunctuation && !dedicatedEnglish && scheme != 3 && local_mode …`，
+   而递给 native 的是**裸的** `chinesePunctuation`（`:4461-4466` 的 `applyChinesePunctuation`）。
+   ⇒ 英文模式下 Core 的 flag 仍是 true。**当前无消费方**（我们的 `keys::punctuation`
+   在英文模式自己 `Passthrough`，那条有单测锁），所以不是 bug，是**语义债**：
+   以后谁开始读 Core 的 flag 判模式就会读错。重开条件写进待办 28。
+3. **默认值两侧一致**：宿主 `chinesePunctuation = true`（`:453`）、Core `full_width_punctuation: true`
+   （`crates/qingjian-core/src/engine/mod.rs:403`）⇒ 冷启动同值。
+4. **"数字后的点保持半角"不是一条例外而是两条**：Core 是 `'.' if after_digit => return None`
+   （`crates/qingjian-core/src/punctuation.rs:52`，依据引擎自己看到的序列）；宿主侧走
+   `preceding` + `direct_digit`/`direct_letter`（`crates/client-core/src/punctuation.rs:44-56`，
+   且要 `smart_punctuation` 开着）。**相似不同源**——这正是上一轮写进代码注释的刻意偏离，
+   本轮确认它不是接线错误。
+   另：青简自己的壳有**两个**键（`crates/qingjian-platform/src/config/general.rs:95` 与 `:98`
+   的 `full_width_punctuation` / `english_full_width_punctuation`），宿主只有一个 ⇒
+   我们只能接一条，另一条没有来源。
+
+⇒ 按任务书「若不等价，停下汇报」：**我没有改代码**。待办 28 的这一半从"未核"变成
+"已核：不等价、接线正确、留一条语义债"。**闭合口径等用户拍**。
+
+### 七、本轮自抓（三条新的 + 两条撤回）
+
+1. **按记忆坐标连点会跨应用漂移**（⇒ 陷阱 69）：我从设置页 `keyevent 4` 退出去之后，
+   一组按上一轮记的坐标连点**落进了微信的联系人资料页**（"韩柳"）。没有发出任何内容
+   （只开了资料页并原路退出），但这是我的操作越界，**如实报告**。
+   防护：每次连点前断言 `mCurrentFocus` 是自己的包；坐标一律从**当轮** dump 的节点 bounds 取。
+2. **`uiautomator dump --windows` 本轮能读到自绘键位**（⇒ 陷阱 70）：`q`/`w`/`123`/`#+=`/`！`
+   与候选格都有 bounds。旧记录写的是「键位行仍是自绘无节点，只能用截图反推」——
+   本轮靠节点把坐标全部现取，误差归零。**旧记录至少不再成立**，别再按它去量坐标。
+3. **`input keycombination` 的修饰键自己会先跑 `command(2)`**（⇒ 陷阱 71）：见第四节第二行。
+   测硬件和弦时不能同时断言"组字还在"。
+4. **撤回**：上一轮"符号层一律半角"（第五节）。
+5. **撤回**：本轮我自己写的测试注释里"三条断言一起红"（第三节第三条）——panic 会终止测试，
+   实际只有第一条跑到。
+
 ## 待办
 
 
@@ -5565,6 +5725,18 @@ NOTICE §5a 已加第 8 条（宿主 Java 树第 4 处破例），README 第 4 �
     在建层时就由 `qingshan/host/java/app/msime/android/keyboard/KeyboardLayout.java:132-137` 选定、既不经 native 也不受这个开关管
     （实测按 `?` `;` 上屏半角）⇒ 若要"关了中文标点还出全角"这类报告彻底闭环，
     得另立一条管符号层的待办，不是本条的重开条件。**）**
+    **（现值 2026-10-18 05:05：① 语义等价性**已核完**，结论是**不等价但接线正确**——
+    宿主 `chinesePunctuation` 同时管键面字形与上屏标点，Core 的 `full_width_punctuation`
+    只管 `punctuate()` 那一条（唯一消费点 `crates/qingjian-core/src/engine/composing.rs:20`），
+    我们接的正是那一条；四条事实与两侧默认值见「剩余 3 个杀会话站点清零」第六节。
+    **新登记一条语义债（不是 bug）**：宿主递给 native 的是**裸** `chinesePunctuation`
+    （`host/java/app/msime/android/core/MSIMEInputService.java:4461-4466`），
+    而它自己用的是**与英文模式/方案/local_mode 相与后的有效值**
+    （`sendsChinesePunctuation()`，同文件 `:3586-3588`）⇒ 英文模式下 Core 的 flag 仍为 true。
+    当前无消费方（我们 `keys::punctuation` 在英文模式自己 `Passthrough`，有单测锁）。
+    **重开条件**：任何代码开始读 Core 的标点 flag 判模式。
+    另外上面那句"符号层…实测半角"本轮已撤回（改成"随开关给全角/半角"）。
+    ⇒ **本条现在可按"已核完、无需修"整体闭合，闭合口径等用户拍。**）**
 29. **候选长按三件的连坐出路**（2026-10-17 深夜立项，**本轮代码净改动 0**）：
     `pinCandidate` / `fixCandidatePosition` / `clearCandidatePosition` 现在是 B1 那套
     「原样 View + `handled:false`」，宿主据此在 `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:6044`
@@ -5596,3 +5768,24 @@ NOTICE §5a 已加第 8 条（宿主 Java 树第 4 处破例），README 第 4 �
     （实测按 `?` `;` 上屏半角，而 Core 表里 `'?' => "？"`）⇒ 用户感知的"标点不对"
     可能来自符号层，与待办 28 的引擎路径是两套，**别把它们并成一个 bug 修**。
     本条状态不变：仍打开、等 (a)/(b)/(c) 拍板，本轮没动 `pin` / `fix` / `clear` 三件。**）**
+    **（现值 2026-10-18 05:05：上面那段里"实测按 `?` `;` 上屏半角"**已撤回**——本轮同一台机、
+    同一版本、开关实测开着（「中文标点」格绿像素 2808）重测，123 页的字形与上屏都是**全角**
+    `：；？！`。"不经 native、不杀会话"那半仍然成立。详见「剩余 3 个杀会话站点清零」第五节。**）**
+30. **`setNineKeyFilter` 转真 = 「View 的 12 个零值字段」的一个具体出口**（2026-10-18 立项，
+    **本轮代码净改动 0 于这一项**）：本轮坐实九键面板在青杉**永不出现**
+    （布局从 View 算：`host/java/app/msime/android/core/MSIMEInputService.java:3770-3776`
+    读 `view.nine_key` / `view.touch_keyboard_layout`，我们 `engine/src/view.rs:184`、`:189` 恒零值），
+    而**设置页里那一行是有的**（「中文键盘 = 26 键 / 九键」，本轮真机看见）⇒ 用户能提这个要求、
+    引擎不答应，且**不会报错**（静默按 26 键画）。
+    要做真的九键至少三件：① View 要把 `nine_key` / `nine_key_spellings` / `nine_key_strokes` 等
+    字段填真值；② Core 要有 T9 输入（全域 `nine_key` 0 命中）；③ 单字/笔顺筛选还要笔顺数据
+    （`stroke` 0 命中；`Candidate.aux_code` 是不是那件事**没核**）。
+    **优先级：中低。** 触发重开的条件：用户报告"选了九键还是 26 键"，或产品要上 T9。
+31. **`glide` 滑行解码要不要做**（2026-10-18 立项）：判定乙（Core 无能力但不用改 Core，
+    自建「点列 → 键序列 → 候选」≥100 行）。本轮只做了止血，**真机连"有没有触发"都没证成**
+    （注入的 swipe 被编辑器选中文本手势吃掉，见陷阱 69/第四节）。
+    **下一步不是写代码，是先找到能触发它的观测手段**（真人手指，或 `motionevent` 逐点下发）。
+    触发重开的条件：产品把滑行输入当卖点，或有用户开了它并抱怨没反应。
+32. **符号层还差两格**（2026-10-18）：① `#+=` 第二符号页的字形集合没测（本轮解释了 123 页随
+    `chinesePunctuation` 变全角/半角，但上一轮那两次"半角"读数最可能就落在这一页）；
+    ② 空组句在**字母层**按逗号那一格没单独拍（单测覆盖）。成本各几分钟。

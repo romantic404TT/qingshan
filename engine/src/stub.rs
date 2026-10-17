@@ -2,7 +2,7 @@
 //
 // 这些是非输入路径的 native 方法占位实现：签名逐位对齐 Java 声明，返回
 // {"ok":false,"error":"not_implemented"}，靠水杉 Java 自身的降级分支（fail()）失效。
-// 真实现的 24 个在 lib.rs，合计 102 个符号一个不能少。
+// 真实现的 27 个在 lib.rs，合计 102 个符号一个不能少。
 
 use jni::objects::JObject;
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jshortArray, jobject};
@@ -63,7 +63,7 @@ macro_rules! stub_boolean {
     };
 }
 
-// bytes 返回，70 个
+// bytes 返回，67 个
 stub_bytes! {
     Java_app_msime_android_NativeClient_accountSettingsApplyRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_accountSettingsExportRaw(jbyteArray _request);
@@ -93,7 +93,6 @@ stub_bytes! {
     Java_app_msime_android_NativeClient_doubaoStartFrameRaw(jboolean _itn, jboolean _punctuation, jboolean _ddc, jbyteArray _boosting_table_id);
     Java_app_msime_android_NativeClient_emojiCatalogRaw(jbyteArray _query, jbyteArray _resources);
     Java_app_msime_android_NativeClient_englishCompletionsRaw(jbyteArray _request, jbyteArray _resources);
-    Java_app_msime_android_NativeClient_glideRaw(jlong _session, jbyteArray _request);
     Java_app_msime_android_NativeClient_hostCapabilitiesRaw(jbyteArray _platform);
     Java_app_msime_android_NativeClient_keySoundPackRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_keyboardSkinTrialRaw(jbyteArray _request);
@@ -108,14 +107,12 @@ stub_bytes! {
     Java_app_msime_android_NativeClient_personalDictionarySyncRaw(jbyteArray _options);
     Java_app_msime_android_NativeClient_pluginsRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_polishPromptRaw(jbyteArray _id, jbyteArray _custom1, jbyteArray _custom2, jbyteArray _custom3);
-    Java_app_msime_android_NativeClient_resetCacheRaw(jlong _session);
     Java_app_msime_android_NativeClient_resolveAppThemeRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_resolveThemeRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_resourcePackAdoptRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_resourcePackInstallRaw(jbyteArray _request, jobject _listener);
     Java_app_msime_android_NativeClient_resourcePacksRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_restoreDefaultPreferencesRaw(jbyteArray _directory, jlong _expected_revision);
-    Java_app_msime_android_NativeClient_setNineKeyFilterRaw(jlong _session, jboolean _single_character, jbyteArray _strokes);
     Java_app_msime_android_NativeClient_setNineKeyModeRaw(jlong _session, jboolean _enabled);
     Java_app_msime_android_NativeClient_setPrivateSessionRaw(jlong _session, jboolean _enabled);
     Java_app_msime_android_NativeClient_shuangpinKeyHintsRaw(jbyteArray _profile);

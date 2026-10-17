@@ -383,15 +383,17 @@ where
     }
 }
 
-/// 候选长按四件共用的空操作应答：`pinCandidate` / `fixCandidatePosition` /
-/// `clearCandidatePosition` / `selectEdge`。
+/// 止血站点共用的空操作应答：候选长按四件 `pinCandidate` / `fixCandidatePosition` /
+/// `clearCandidatePosition` / `selectEdge`，加本轮两件 `glide` / `setNineKeyFilter`。
 ///
-/// 为什么不是桩：这四个调用点的 catch 体是 `fail()`（`MSIMEInputService.java:6046`、
-/// `:6243`），回 `not_implemented` 等于「点一下就死会话」。青简 Core 没有对应能力
-/// （逐个核实见 `third-party/PIN.md`「会话建立后的 stub 降级面」），先止血。
+/// 为什么不是桩：这六个调用点的 catch 体都是 `fail()`（`MSIMEInputService.java:6046`、
+/// `:6243`、`:3147`、`:3160`），回 `not_implemented` 等于「点一下就死会话」。青简 Core
+/// 没有对应能力（逐个核实见 `third-party/PIN.md`「会话建立后的 stub 降级面」与
+/// 「剩余 3 个杀会话站点」），先止血。
 ///
 /// 只读会话：不 `advance`、不 `requery`。代次一变，宿主会按
 /// `(session, generation, page)` 把候选条滚回最左（`MSIMEInputService.java:8101-8122`）。
+/// `handled:false` 在这六件上都安全：六个调用点全把 `apply()` 的返回值丢掉。
 fn no_op(env: &mut EnvUnowned<'_>, session: jlong) -> jbyteArray {
     let id = session as u64;
     match with_session(id, |state| build_view(state, id)) {
@@ -704,6 +706,53 @@ pub extern "system" fn Java_app_msime_android_NativeClient_punctuationWithContex
     })
 }
 
+/// `resetCache`。三个调用点里唯一**真做**的一件：候选缓存就是 `Session.candidates`，
+/// 丢掉它再由 `run_transition` 重建，宿主那句「已清除候选缓存」才不是空话。
+///
+/// 入口只有硬件键盘和弦 Ctrl+Shift+Alt+C（判定入口
+/// `qingshan/host/java/app/msime/android/policy/HardwareMaintenancePolicy.java:36`），
+/// 触屏上没有这条路。
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_app_msime_android_NativeClient_resetCacheRaw(
+    mut env: EnvUnowned<'_>, _class: JObject<'_>, session: jlong,
+) -> jbyteArray {
+    logcat::init();
+    transition(&mut env, session as u64, |state| {
+        crate::keys::reset_cache(state)
+    })
+}
+
+/// 滑行输入（一笔划过的路径）。**止血，不是实现**：青简 Core 没有路径解码能力，
+/// 真做要自建「点列 → 键序列 → 候选」的解码器（方案见 PIN「剩余 3 个杀会话站点」第二节）。
+///
+/// 回的是 `no_op` 那一份（`ok:true` + 当前 View + `handled:false`），与宿主自己那句注释
+/// 「引擎不收（handled=false）时什么也不输入」（
+/// `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:3144`）逐字一致：
+/// 抬手后什么也不上屏，但会话活着。这里的 `handled:false` 不触发命令 9——
+/// `void glide(String)` 把 `apply()` 的返回值丢了（同文件 `:3145-3148`），
+/// 与标点键那轮的情形不同（那里 `punctuation()` 的布尔被读）。
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_app_msime_android_NativeClient_glideRaw(
+    mut env: EnvUnowned<'_>, _class: JObject<'_>, session: jlong, _request: jbyteArray,
+) -> jbyteArray {
+    no_op(&mut env, session)
+}
+
+/// 九键候选的单字/笔顺筛选。**止血，不是实现**，而且这个站点在青杉**当前不可达**：
+/// 布局由 View 决定（`touchLayout(value)` 读 `nine_key` 与 `touch_keyboard_layout`，
+/// 同文件 `:3770-3776`），而 `qingshan/engine/src/view.rs:184` 恒 `nine_key = false`、
+/// `:189` 恒 `TwentySixKey` ⇒ 九键面板永不出现，那五个调用点全是死路。
+///
+/// 真做筛选要先让 Core 有 T9 输入与笔顺数据（全域 `nine_key` 0 命中），属 PIN 里那条
+/// 「View 的 12 个零值字段」的大面，不在本轮。
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_app_msime_android_NativeClient_setNineKeyFilterRaw(
+    mut env: EnvUnowned<'_>, _class: JObject<'_>, session: jlong, _single_character: jboolean,
+    _strokes: jbyteArray,
+) -> jbyteArray {
+    no_op(&mut env, session)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -779,6 +828,47 @@ mod tests {
             echoed,
             wire::no_op_body(&view),
             "两种形状必须不同，相同就说明有人抄错了"
+        );
+    }
+
+    /// `resetCache` 走完编排后的形状：代次要涨、表要按当前组字重建、`handled` 为真，
+    /// 而且**不带 diagnostic**——点亮 `hasDiagnostic` 会让候选条那四行整排消失
+    /// （连坐面见 `third-party/PIN.md`「戊-A」那几节），一次清缓存不该换来这个。
+    ///
+    /// 判别器（实跑）：把 `keys::reset_cache` 的 `CommandOutcome::Consumed` 换成
+    /// `Passthrough` ⇒ `handled` 这条当场红，后面两条**不会跑到**（panic 直接终止这个测试），
+    /// 所以本测试里真正起作用的只有这一条。「表非空」那条**抓不到"没清"**——
+    /// `run_transition` 无条件 `requery()`，清没清都会被重建，那条锁在
+    /// `keys::tests::reset_cache_drops_the_whole_candidate_table` 里。
+    #[test]
+    fn reset_cache_transition_advances_and_carries_no_diagnostic() {
+        let engine = qingjian_core::Engine::new(
+            qingjian_dictionary::Dictionary::parse("你好\tni hao\t9000\n").expect("夹具词库"),
+        );
+        let mut state = Session::new(engine, 7);
+        for c in "nihao".chars() {
+            let _ = state.engine.push(c);
+        }
+        state.requery();
+        assert!(!state.candidates.is_empty(), "夹具：先要查出候选");
+        let before = state.generation;
+        let transition = run_transition(&mut state, 7, |s| keys::reset_cache(s));
+        assert!(
+            transition.handled,
+            "清缓存是引擎收下的一次操作，不是交回宿主"
+        );
+        assert!(
+            transition.diagnostic.is_none(),
+            "不该顺手点亮 hasDiagnostic"
+        );
+        assert_eq!(
+            state.generation,
+            before + 1,
+            "代次必须推进，用户手里的旧候选号要作废"
+        );
+        assert!(
+            !state.candidates.is_empty(),
+            "丢掉之后要按当前组字重建，不能留一张空表"
         );
     }
 }
