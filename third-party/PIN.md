@@ -612,6 +612,30 @@ AGP 9.x 要求 Gradle 9.6+），升 AGP 会直接破坏构建。
     这条不靠脚本；③ 行号会漂就**优先引测试名/函数名**，它比数字稳。
     （顺带同族第二次撞：描述"旧引用"的句子如果用"文件名冒号数字"那种写法，**它自己会变成一条新引用**——
     本轮先中招的是本仓 lib.rs 第 531 行那句（复跑立刻 LINE-OOB 1），改完才回到 0。）
+60. **试用页输入框正上方那两个链接是坐标雷，误触会把默认输入法换掉**（2026-10-17 深夜实测，代价是一张照片作废重拍 + 手工复位）：
+    「当前不是青杉输入法？点此切换」与「收起键盘」在键盘**收起**时位于 y≈2205 一线（x 分界约 420），
+    而键盘**弹出**后输入框会重排到 y≈1533——**同一套"点输入框"的坐标在两种布局下差 600 px**。
+    我按记忆坐标连点两次：第一次点了「收起键盘」，第二次点了「点此切换」⇒ 拉起系统输入法选择器，
+    后续一次点击把 `default_input_method` 换成了讯飞（`com.iflytek.inputmethod/.FlyIME`）。
+    **症状很迷惑**：`mInputShown=true`，弹出来的却是一套完全不同的键盘（QWERTY 大写、
+    「符/123/中英/发送」、蓝白皮肤）——不是我们的键盘坏了，是压根不是我们的键盘。
+    **规则**：① 每次唤起键盘后先读 `dumpsys input_method` 的 `mInputShown` **与 `mCurMethodId`** 再往下走；
+    ② 轮次收尾必须复验 `settings get secure default_input_method`（本轮开局就读过一次，
+    正因为有开局基线才复位得回来）；③ 复位用
+    `settings put secure default_input_method app.qingshan.ime/app.msime.android.MSIMEInputService`。
+61. **息屏截图有指纹：`exec-out screencap -p` 回 15,580 B 就是没拍到**（2026-10-17 深夜实测，撞两次）：
+    本机（OPPO PEGT10）息屏时 screencap **不报错**，仍给一张 1080×2400、PIL 打得开的**纯黑** PNG，
+    字节数稳定在 15,580 B（正常画面 80 KB–180 KB）。⇒ 判据：**字节数 < 20 KB 一律当"没拍到"**，
+    先 `input keyevent 224`（唤醒）+ `keyevent 82`（解锁）再重拍；长间隔步骤前
+    `svc power stayon true`，**收尾记得关回 false**（否则下次轮次的"屏幕常亮"会变成隐性环境差异）。
+    同族教训：**"文件能打开 / 尺寸对 / 命令退出码 0"三样都不是内容有效的证据**（PIN 第 7 条的老账）。
+62. **`comm` 不排序就会给出假的"丢失"**（2026-10-17 深夜实测，撞在防吞标题的那道闸上）：
+    「改前改后 `comm -23` 应为丢失 0」这条闸（第 35 条）我按文件顺序喂 `comm`，它回
+    `comm: file 1 is not in sorted order` 并且**照样吐出一个数**——本轮先报了"丢失 1"，
+    而实际一条没丢（188 → 196，全是新增）。**方向是误报，但同一条命令在另一种输入下会漏报**，
+    那才是真危险。⇒ **判据命令自己也要自检**：比较标题集合时一律
+    `comm -23 <(cut -d: -f2- 前|sort) <(cut -d: -f2- 后|sort)`，并且**同时看两个数**
+    （`comm` 的告警行 + 前后标题条数差），别只看那个"丢失"计数。
 
 ## 方案 A 实现与真机验收（2026-10-14 03:06–03:25）
 
@@ -4535,6 +4559,169 @@ clean 包 50,170,689 → **50,188,641 B（+17,952）**、`scan_bridges --summary
 - **第 21 条关闭**（候选条不再被这两个触发器连坐；残余触发器转成新待办第 27 条的一半）。
 - **新增第 27 条**：转屏后键盘漂到英文 + 大写（上一轮撞见、本轮**没复现**——
   本轮转屏两次都还是 全拼/中）。连同"打字统计提示仍会连坐"一起记在里面。
+  **（现值 2026-10-17 深夜：这一条里"打字统计提示仍会连坐"只说对了一半，且本节第四节
+  "收益…是剩下那一整族"**被本轮实测推翻**——23 个降级站点里只有 1 个会点亮 `hasDiagnostic`，
+  而真正常发的那个是**候选长按**。全部更正见下一节「待办 27 实验①② + 全角真机数 + 戊-A 评估」。**）**
+
+## 待办 27 实验①② + 全角真机数 + 戊-A 评估（2026-10-17 14:00–21:45，**代码净改动 0**）
+
+设备 OPPO PEGT10（serial `e1cdb946`，Android 13，1080×2400），装的是 `83feb56` 那版包
+（50,188,641 B，本轮**没有重装**——本轮一行代码都没改，`git status` 干净）。
+转屏一律 `settings put system user_rotation 1|0`，且先把 `accelerometer_rotation` 置 0
+（轮次结束已 `settings delete` 回原状，实测读回 `null`）。
+
+### 一、实验①：固定语种连转 5 次 ⇒ **漂英文 0 次**
+
+每轮：点输入框 → 逐字点 `n i h a o`（确认 preedit 与候选条在、空格键标签「全拼」、语种键「中」）
+→ 竖→横→竖 → 观察。五轮结果：
+
+| 轮 | 转屏后空格键 | 语种键 | 键面大小写 | 组字 | 诊断行 |
+|---|---|---|---|---|---|
+| 1–5 | **全是「全拼」** | **全是「中」** | **全是小写** | 5/5 被冲掉（字母原样落进输入框） | **0 次** |
+
+**这不是"我看了一眼觉得没漂"**：五轮的"转屏后"截图**逐字节相同**（md5 `1825dc0173415817d2c1b76b3807cda4`，
+五张同一个哈希），而每轮"转屏前"那张与它不同（`4a9301f5…` 两轮 / `ef162d9c…` 三轮，
+差异只是输入框光标闪与不闪）⇒ 采集是活的、抓到了转屏前后的状态变化，五轮的"转屏后"确实同一个状态。
+**⇒ 待办 27 的"偶发"定性继续成立，且现在有 5 次未复现的量化底座**，下一轮不许拿"转屏必漂"当前提。
+组字 5/5 被冲掉 = 待办 26（上游 `onFinishInput` → `stop(true)`），本轮只是又量了 5 次。
+
+### 二、实验②：`DEFAULT_INPUT_METHOD` 转屏前后 **6 次读数全部一致**
+
+转屏前 1 次 + 每轮转屏后各 1 次，共 6 次，全部 = `app.qingshan.ime/app.msime.android.MSIMEInputService`。
+**⇒ "默认输入法切换触发"这条假设在本条的复现路径上排除。**（不是"没测到变化所以可疑"，
+是同一台机、同一串操作、6 个读数。）
+
+### 三、全角开关真机验证（把戊-C 欠的那个数补上）
+
+先说清楚**为什么这个实验能判别**：宿主 `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:4447`
+的 `applyCharacterWidth()` 先 `fullWidthInput = fullwidth`，紧接着 `:4452`
+**用回声里的宽度把它反向覆盖回去**。所以"点一下全角"这个动作本身就穿过回声：
+naive 回声（恒 `Halfwidth`）会让卡片**当场弹回关闭**，桩（会抛）会让卡片留着但**点亮诊断行**。三态可分：
+
+| 版本 | 点「全角」之后 | 诊断行 |
+|---|---|---|
+| 桩（甲/戊-C 之前） | 卡片开（异常路径不改字段） | **有**「全角状态未能同步到输入引擎」 |
+| naive 回声 | **卡片当场回关** | 无 |
+| 戊-C（本轮实测） | **卡片保持开** | **无** |
+
+**实测（判据是像素，不是"看着像"）**：更多工具面板里「全角」卡片（`qingshan/host/java/app/msime/android/keyboard/FunctionPanelModel.java:35`
+定义标签，`qingshan/host/java/app/msime/android/core/ImeFunctionPanel.java:127` 绑 `s::toggleFullWidthInput`，
+开启态画强调色 + ✓ 角标）。取卡片框 145×140 px 数"绿像素"（`g > r+15 且 g > b+15`）：
+
+- 「全角」卡片：点前 **0 / 20300** → 点后 **2715 / 20300** ⇒ 确实从关到开，且**开态是回声之后仍然在**。
+- 对照 1「中文标点」卡片（本来就开）：点前 2808 → 点后 **2808** ⇒ 不是"整个面板都变绿"。
+- 对照 2「模糊音」卡片（本来就关）：0 → **0** ⇒ 没有连带翻牌。
+- `logcat -d` 里「全角」出现 **0** 次、「未能同步」**0** 次、`grep -c "FATAL EXCEPTION"` **0**。
+
+**⇒ 上一轮记的"回声恒等只是读码 + 单测"这条欠账，现在有真机数了：回声带回了 `Fullwidth`。**
+
+### 四、转屏之后全角**没守住**（绿像素 2715 → 0）——为什么这不是戊-C 的锅
+
+同一套两步转屏之后重开面板量：「全角」绿像素回到 **0**（对照「中文标点」仍 2808 ⇒ 不是面板没刷新）。
+根因是**上游语义**，两处读码 + 一处文件实测：
+- `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:1712` 每次建会话都
+  `applyCharacterWidth(fullWidthPreference)` —— 推的是**偏好值**，不是"用户刚才在卡片上点的那个"。
+  同文件 `:4485` 的注释就写着「Switch width for this session; the shared setting supplies the
+  next session's default」。
+- 而 `fullWidthPreference` 来自 `:715-717`：`preferences.optString("character_width", "halfwidth")`。
+  **实测本机偏好文档里根本没有这个键**（`run-as` 读 `files/bootstrap/state/preferences.json`，
+  全文只有 `clipboard_history` / `last_chinese_scheme` / `scheme` / `shuangpin_profile` /
+  `touch_keyboard_layout` / `touch_keyboard_schemes` / `traditional_chinese_output` /
+  `usage_reporting` + `format_version` + `revision": 14`）⇒ `fullWidthPreference` 恒 false。
+- 而且这个键**在本仓没有任何写入方**：全库 `grep -rn "character_width"` 只命中
+  `qingshan/host/java/app/msime/android/keyboard/CharacterWidthPolicy.java:13` 与同文件的 `VIEW_KEY`
+  两处常量定义 ⇒ 想让它 true，只能改文件。
+
+**结论要分成两句，别混**：① "回声恒等"本轮已被真机证成（第三节）；② "戊-C 防的是把用户全角打回半角"
+这个价值**在本机路径上暂时观测不到**，因为根本没有"偏好=全角"的状态可打回。
+**要造出那个状态得手工把 `character_width: "fullwidth"` 写进偏好文档**——那是改持久化文件、
+且我们自己的 `save` 路径下次整档重写时可能把它丢掉，**本轮没做**（怕留下一个解释不清的脏档），
+留给拍板。**下一轮若有人再说"转屏丢全角 = 戊-C 没做好"，指本节。**
+
+### 五、戊-A 评估：连坐面实测清单、四个方案、结论
+
+**先把机制钉死**（本轮逐处读码，行号现核）：一个布尔 `hasDiagnostic`
+（`qingshan/host/java/app/msime/android/core/MSIMEInputService.java:7804` =
+`InputDiagnosticPolicy.visible(diagnosticMessage)`）同时压住四行——标题行 `:7812`、
+工具栏行 `:7818`、候选行 `:7832`、候选视口 `:7836`。注意后两条判据里带 `!idle`：
+**空闲时它们本来就隐藏，所以"打字时候选条没了"必然发生在组字态**，与本轮第六节的照片一致。
+
+**点亮它的通路只有两条**（`qingshan/host/java/app/msime/android/core/ImeDebugOverlay.java:211` 的
+`showDiagnostic()` 内部就是转调 `:221` 的 `showMessage()`，**两者写的是同一个字段，没有等级之分**）：
+
+1. `showDiagnostic()` 全库 **6 个调用点**：`:2420`（引擎自带 `diagnostic` 字段，只有真实现会写）、
+   `:4456` 全角（戊-C 已让它不再走异常路径）、`:4467` 标点（甲 已）、`:5962`「已清除候选缓存」、
+   `:5972` 与 `:6044`「当前候选不支持此操作」。
+2. `notice()`（`:482`）全库 **32 个调用点**，外加一条**桥**：`:7813` 在空闲时把
+   `preferencesNotice` 交给 `:471` 的 `announceIdleNotice()`，后者**只放行文案里含
+   失败 / 未能 / 无法 的那批**去调 `notice()`。
+
+**本轮把 23 个"降级"站点逐个扫了 catch 体**（脚本：从调用点往后找 catch、匹配花括号、
+再按 `notice(` / `showDiagnostic(` / `showMessage(` / `preferencesNotice` / `Toast` / 具名 helper 过滤）：
+**22 个静默或返回默认值，只有 1 个点亮** —— `:937` 的 `typingStatistics`，
+它**根本不抛**（桩诚实回 `ok:false`，`new JSONObject` 解析成功），走
+`:1069 → :1073 → :1079` 把 `preferencesNotice` 写成「 · 打字统计未能写入」→ `render()` →
+`:7813` 桥 → `notice()` → `showMessage()` → 连坐。
+`:1640` 写的是「个人词库同步稍后重试」——**「稍后重试」正是 `:470` 注释里点名不放行的那类**，不连坐；
+`:2367` 静默。**⇒ 上一轮"戊-A 的收益是剩下那一整族"这句作废，族不存在。**
+
+**但本轮在真机上撞出一个上一轮没算进去的、更常发的触发器**：
+试用页组字中长按候选 `你好` → 菜单「优先显示」（B1 那批 `handled:false` 的方法之一）→
+`:6044` `showDiagnostic("当前候选不支持此操作")` → **诊断行亮 + 候选条整条消失**，
+而 preedit `nihao` **全程还在**（两张照片里输入框的 `nihao` 都带下划线）；
+等 5 秒再拍：诊断行没了、候选条回来了（`你好 你好好 你好像 你好久 你好看`，页码 1/5）。
+**⇒ 连坐的因果闭环再次坐实，而且这次是普通用户手势，不是转屏这种低频操作。**
+覆盖度：`pinCandidate` / `fixCandidatePosition` / `clearCandidatePosition` 三个 B1 方法都走 `:6044`，
+`removeCandidate` 走 `:5972`（但它是真实现，正常不触发）。
+
+**四个方案与代价**（范围都按"要动几个文件、几处"给，不猜行数以外的好处）：
+
+| 方案 | 动什么 | 破例面 | 覆盖本轮实测的两个触发器？ | 与上游同步代价 |
+|---|---|---|---|---|
+| A 按等级收窄（原设计） | 给 `showMessage` 加等级 + 逐个判 32 个 `notice()` 调用点 | **Java 破例，面大** | **不覆盖**：①「打字统计未能写入」本身就是失败级（含「未能」，上游 `:471` 就是按这个放的行）；②候选那条走 `showDiagnostic`，天然"诊断级" | 高（要重排上游一条策略） |
+| B 4 秒 → 1 秒 | `qingshan/host/java/app/msime/android/policy/InputDiagnosticPolicy.java:5` 一个常量 | Java 破例，**1 行** | 两个都减轻但不消除；真失败也只剩 1 秒可读 | 低（单常量） |
+| C 我们侧不点亮 | 让桩返回宿主能解析的成功信封 | **纯 Rust，不破 Java** | ①可（`typingStatistics` 回 `{ok:true,value:{recorded:0}}`，语义="一条也没收"是真话，约 10–15 行 + 2 单测）；②**不行**——`handled:false` 是 B1 故意选的诚实值，改成 `true` 就是撒谎 | 低；但要逐个站点判信封形状（两种形状混用会静默重置 32 个键） |
+| D 只放掉工具栏行 | `:7818` 去掉 `!hasDiagnostic` 一个 token | Java 破例，**1 token** | **不覆盖本轮症状**：候选行/视口在 `:7832`/`:7836`，而且诊断行与标题行同槽，去掉门禁有重叠风险 | 低但风险不明 |
+
+**结论：本轮不实现，等拍板。** 判据是任务书那道门槛——"小于 80 行 **且** 不破 Java 零改动"：
+对症的 A/B/D 全要 Java 破例；不破 Java 的 C 只能消掉两个触发器里的那个遥测的，
+且它消掉的正是"诚实报 `ok:false`"这个我们一直守着的取向。**戊-A 原设计（A）的前提被本轮实测削弱**，
+不建议按原样批准。要治本，性价比最高的是 **B（1 行）**，其次是 **C 的单站点版（约 10–15 行纯 Rust）**；
+候选长按那条（`:6044`）真正的解法是**把 `pinCandidate` / `fixCandidatePosition` / `clearCandidatePosition`
+做成真实现**（Core 有没有对应能力本轮没查，属下一轮的事）。
+
+### 六、撤回一条旧断言：Core **有**中文标点开关
+
+上一轮写在「甲止血标点桩」一节第一句的"青简 Core 没有标点开关（全仓 grep `chinese_punctuation` 0 命中）"
+**作废**。我当时只搜了一个词。本轮在只读参考里搜到：
+`qingjian/crates/qingjian-core/src/engine/setup.rs:9` 的 `pub fn set_full_width_punctuation(&mut self, enabled: bool)`
+（文档注释逐字：「设置中文模式的标点转换。」），消费点在
+`qingjian/crates/qingjian-core/src/engine/composing.rs:16` 的 `punctuate()`——
+`:20` 那句 `let converted = if self.full_width_punctuation {` 决定要不要把半角标点转成全角；
+字段在 `qingjian/crates/qingjian-core/src/engine/mod.rs:116`，**默认 true**（同文件 `:403`）。
+⇒ 甲的"只回声、不改引擎"留下了一个**没接线的真能力**：宿主卡片「中文标点」关掉，引擎照转全角。
+**已记待办第 28 条。** 教训同族第 N 次：**判"API 不存在"之前，换两三个词再搜一遍**——
+`chinese_punctuation` 0 命中不等于 `full_width_punctuation` 不存在。
+
+### 七、本轮自抓（三条，都写进陷阱）
+
+1. **我把默认输入法弄丢过一次**：试用页输入框正上方那一行有两个链接
+   「当前不是青杉输入法？点此切换」与「收起键盘」（本机实测在 y≈2205 一线，x 分界约 420）。
+   我在键盘未弹出时按记忆坐标点输入框，连点两次都落在这一行上：先点了「收起键盘」，
+   再点「点此切换」拉起系统输入法选择器，后续一次点击把默认 IME 切成了
+   `com.iflytek.inputmethod/.FlyIME`（讯飞）。**症状**：`mInputShown=true` 但弹出来的是
+   一套完全不同的键盘（QWERTY 大写、「符/123/中英/发送」、蓝色皮肤）。
+   **已复位并复验**：`settings put secure default_input_method app.qingshan.ime/app.msime.android.MSIMEInputService`，
+   读回 DIM 与 `dumpsys input_method` 的 `mCurMethodId` 两项都是我们的。**代价**：中间那一张
+   长按候选的照片作废重拍（第五节那张是复位之后重做的）。
+   ⇒ 新流程判据：**每次唤起键盘后先读 `mInputShown` 与 `mCurMethodId` 再往下走。**
+2. **黑屏截图有指纹**：本机息屏时 `exec-out screencap -p` 回 **15,580 B**（内容全黑，PIL 打开正常、
+   尺寸仍是 1080×2400，所以"能打开"不报错）。本轮两次撞上（一次差点把"面板没开"读成"面板是黑的"）。
+   ⇒ 判据：**截图字节数 < 20 KB 就当"没拍到"处理**，先 `input keyevent 224` + `82` 唤醒再重拍；
+   长间隔操作前 `svc power stayon true`，收尾记得关。
+3. **PC 时钟本轮跳变**：同一次轮次里 `date` 先后给过 13:59 / 14:02 / 21:45 / 23:46，
+   设备时钟另一套（14:03 → 17:58）。⇒ **本轮所有时间戳只表示先后顺序，不表示时长**；
+   凡我写"耗时"的地方一律不给。
 
 ## 待办
 
@@ -4864,6 +5051,11 @@ clean 包 50,170,689 → **50,188,641 B（+17,952）**、`scan_bridges --summary
     「设置读取或应用失败」0。REAL 22→23、桩 80→79、合计仍 102、host/java 零改动。
     **残余**：同一处连坐还有别的触发器（本轮实测撞见「打字统计未能写入」走同一条通路），
     收窄判据是 Java 破例（戊-A），已连同"转屏后键盘漂英文"一起记在待办第 27 条。**）
+    **（现值 2026-10-17 深夜：本行那句"还剩别的触发器"只说对了**一个**——23 个降级站点里只有
+    打字统计上报那 1 个会点亮；但**候选长按**那条（B1 的 `handled:false` → 宿主弹
+    「当前候选不支持此操作」）本轮在真机上实测到，且它比转屏常发得多。
+    两条的归属分别是待办第 29 条与戊-A 方案表，**本条仍算关闭**（转屏那两个触发器确实没了）。
+    见「待办 27 实验①② + 全角真机数 + 戊-A 评估」第五节。**）
 22. **旋转丢组合 + 偏好读取恒失败：两条从第 21 条那一轮量出来的真缺陷**（2026-10-16 00:14 立项，**本轮没改任何代码**）。
     ① **旋转把组合冲掉**：竖屏组合中（preedit `nihao` 在、候选条在），锁到横屏之后
     `tryout_field` 变成 `nihaonihao`（**字母原样进了输入框**）、preedit 节点消失、候选条没了；
@@ -5060,3 +5252,37 @@ clean 包 50,170,689 → **50,188,641 B（+17,952）**、`scan_bridges --summary
     但遥测那路仍在——实测点候选上屏后左下角出现过「打字统计未能写入」，走同一条 `notice()` 通路
     （见「戊-C 落地」一节第四节）。**戊-A**（把连坐范围从"任何提示"收窄到"失败级提示"）估 25–60 行，
     是 **Java 破例 + 偏离上游**，方案表在「甲止血标点桩」一节第四节。**要不要治本等用户拍，本条不是已排期。**
+    **（现值 2026-10-17 深夜，实验①②已跑：① 固定语种连转 5 次 ⇒ 漂英文 **0 次**、大写 **0 次**、
+    诊断行 **0 次**，组字 5/5 被冲掉（那是待办 26）；五轮"转屏后"截图逐字节同一哈希，
+    不是"看一眼觉得没漂"。② `DEFAULT_INPUT_METHOD` 转屏前后 6 次读数**全部一致** ⇒
+    "默认输入法切换触发"这条假设**排除**。③ **仍未查**（要看 Java 那份 `dedicatedEnglish`
+    在重建后是丢了默认值还是被回声覆盖，与全角同形状）。**定性维持"偶发"**，
+    下一轮开查不许带"转屏必漂"的前提。全过程见「待办 27 实验①② + 全角真机数 + 戊-A 评估」一节一、二节。**）
+    **（另一半的更正：本条立项时写的"连坐还剩别的触发器 = 剩下那一整族"**被本轮推翻**——
+    23 个降级站点逐个扫 catch 体，只有 1 个（打字统计上报）会点亮 `hasDiagnostic`；
+    但本轮另在真机撞出一个上一轮没算进去、且更常发的触发器：**长按候选点「优先显示」**
+    走 `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:6044`
+    弹「当前候选不支持此操作」⇒ 组字中候选条整条消失 4 秒（preedit 全程还在，5 秒后自愈）。
+    四方案代价表与"本轮不实现"的判据见同一节第五节。**）
+28. **把「中文标点」接到 Core 的真开关上（撤回上一轮"Core 没有标点开关"那条断言的后续）**（2026-10-17 深夜立项，**本轮代码净改动 0**）：
+    上一轮「甲止血标点桩」一节第一句写"青简 Core 没有标点开关（全仓 grep `chinese_punctuation` 0 命中）"
+    ——**作废**。Core 有：`qingjian/crates/qingjian-core/src/engine/setup.rs:9` 的
+    `set_full_width_punctuation(&mut self, enabled: bool)`（注释逐字「设置中文模式的标点转换。」），
+    消费点 `qingjian/crates/qingjian-core/src/engine/composing.rs:16` 的 `punctuate()`
+    （`:20` 按 `self.full_width_punctuation` 决定要不要转），字段 `engine/mod.rs:116`、**默认 true**（`:403`）。
+    **现状**：甲只回声不改引擎 ⇒ 宿主卡片「中文标点」关掉，引擎照旧把标点转成全角。
+    **要做**：`setChinesePunctuationRaw` 里除回声外再调 `state.engine.set_full_width_punctuation(enabled)`
+    （估 3–8 行 + 1–2 条单测）。**先核两件事再动手**：① 上游 `chinesePunctuation` 与 Core 的
+    `full_width_punctuation` 语义是否等价（前者管键面与上屏的中文/西文标点，后者管半角→全角转换，
+    且 `punctuate()` 那条注释写着"数字后的点保持半角"这类例外）；② 我们这边 `Engine` 的
+    方法在 `session.rs` 的挂起/恢复路径上要不要一起重放（否则换输入框就丢）。
+    **优先级：中。** 触发重开的条件：用户报告"关了中文标点还是出全角标点"。
+29. **候选长按三件的连坐出路**（2026-10-17 深夜立项，**本轮代码净改动 0**）：
+    `pinCandidate` / `fixCandidatePosition` / `clearCandidatePosition` 现在是 B1 那套
+    「原样 View + `handled:false`」，宿主据此在 `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:6044`
+    弹「当前候选不支持此操作」⇒ 点亮 `hasDiagnostic` ⇒ 组字中候选条整条消失 4 秒（本轮真机实测，
+    见「待办 27 实验①②…」第五节）。三条出路：**(a)** 查 Core 有没有"置顶/固定位置"的能力，有就做成真实现
+    （最干净，但要先核实能力边界）；**(b)** 戊-A 方案 B（`InputDiagnosticPolicy.java:5` 的 4 秒改 1 秒，1 行 Java 破例）；
+    **(c)** 维持现状（诚实提示 + 4 秒自愈）。**本轮一条都没动，等拍板。**
+    与待办 21 的关系：21 关的是"转屏那条路径上的两个触发器"，本条是**同一个连坐机制的另一条入口**，
+    不算 21 重开。
