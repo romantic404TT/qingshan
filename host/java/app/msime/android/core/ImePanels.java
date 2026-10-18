@@ -1033,7 +1033,14 @@ final class ImePanels {
         s.schemePanel.removeAllViews();
         KeyboardGeometry.setPaddingDp(s.schemePanel, s, 8, 14, 8, 6);
         // 4×2 分页网格：已启用的方案按共享目录的顺序，英文 26 键排在第三格（方案不够时排最后），末尾是「+ 添加语言」。
-        java.util.List<KeyboardScheme> schemes = s.visibleSchemes;
+        // 待办 37：九键在本版本画不出来——键盘布局从引擎回声的 View 算，我们 `engine/src/view.rs:184`
+        // 的 `nine_key` 恒为 `false`、`:189` 恒为 `TwentySixKey`。NOTICE 第 9 条只挡掉了设置页那一行，
+        // 键盘上这个方案选择器是第二个入口，留着它就是一张「点下去什么都不发生」的假卡片。
+        // 这里把它从卡片列表里剔掉：假入口宁可看不见，也不要让用户按了没反应再猜为什么。
+        // 已知残留与第 9 条同族：存储里已经是九键的老用户，这里没有卡片会高亮（键盘本来就是 26 键）。
+        java.util.List<KeyboardScheme> schemes =
+            new java.util.ArrayList<>(s.visibleSchemes);
+        schemes.remove(KeyboardScheme.QUANPIN_NINE_KEY);
         final int englishIndex = BoundsPolicy.bounded(2, 0, schemes.size());
         int cardCount = schemes.size() + 2;
         PagedTileGrid grid = new PagedTileGrid(s);

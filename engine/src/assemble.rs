@@ -2,7 +2,8 @@
 //!
 //! 与 Java 的契约（Bootstrap.java:43-44 / :57）：
 //!   Java 发  {"resources": ".../bootstrap/resources", "state_root": ".../bootstrap/state"}
-//!   我们回  {"resources": <回显>, "state_root": <回显>, "preferences_directory": <state_root>}
+//!   我们回  {"resources": <回显>, "state_root": <回显>, "preferences_directory": <state_root>,
+//!            "preferences": <出厂默认偏好那块，空对象>}
 //!   之后 Java 把 value 写进 runtime-options.json，全 App 读它。
 //!
 //! 关键约束：
@@ -15,6 +16,12 @@
 //!   4. dict_path 必须由 HostRequest.resources.join("dict.tsv") 得到，不能用仓库路径。
 //!      Bootstrap.java:259-260 把 assets/dictionary/<name> 拍平复制到 resources/<name>，
 //!      所以设备上是 resources/dict.tsv，没有 dictionary/ 子目录。
+//!   5. **`preferences` 这块必须有**（待办 36，2026-10-18 补）：宿主把它当「首次安装时写下的
+//!      出厂默认副本」，`MSIMEInputService.java:1279` 软取它为 null，而 `:1298` 与 `:7599`
+//!      在 `learningSuppressed()` 为真时**硬取** `getJSONObject("preferences")`——缺这一块
+//!      就抛 `JSONException`，那两个输入框的会话当场死。内容只能是空对象：往这里写
+//!      用户选择会让宿主「不按这份副本重算皮肤 / 候选条 / 剪贴板」那三分支的假设失效
+//!      （见 `applyEditorPreferences` 的 `live` 门）。
 
 use std::path::PathBuf;
 
@@ -53,6 +60,9 @@ pub struct HostResources {
     pub resources: String,
     pub state_root: String,
     pub preferences_directory: String,
+    /// 出厂默认偏好那块，空对象。缺它会让密码框 / 隐私模式 / 关「记忆新词」的会话当场死，
+    /// 理由与硬取那两行的位置见模块文档第 5 条。
+    pub preferences: serde_json::Value,
 }
 
 /// 构造 Engine 所需的设备路径（createRaw 的输入）。
@@ -83,6 +93,13 @@ pub fn prepare_host(request: &HostRequest) -> Result<HostResources, Error> {
         resources: request.resources.to_string_lossy().into_owned(),
         state_root: request.state_root.to_string_lossy().into_owned(),
         preferences_directory: request.state_root.to_string_lossy().into_owned(),
+        // 只取 `preferences` 那一块：`load_document()` 的外层是 `preferences.json` 的信封
+        // （`format_version` / `revision`），而 runtime-options.json 要的是里面那块。
+        // 取不到时兜一个空对象——这份回显里「有这一块」本身是契约（模块文档第 5 条）。
+        preferences: crate::preferences::load_document()
+            .get("preferences")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})),
     })
 }
 
@@ -359,5 +376,48 @@ mod tests {
             .join("../host/assets/dictionary/glossary-en.tsv");
         qingjian_translate::Glossary::from_path(qingjian_core::Language::English, &path)
             .expect("随包 glossary-en.tsv 必须能过 Glossary::parse，否则线上静默退回 NoTranslator");
+    }
+
+    /// 待办 36 的契约锁：`Bootstrap.java:57` 把我们回的 `value` **原样**写进
+    /// `files/runtime-options.json`，宿主随后到处读它的 `preferences` 块
+    /// （`MSIMEInputService.java:1279` 软取、`:1298` 与 `:7599` 硬取）。上一版只回三个键，
+    /// 那块缺失 ⇒ 硬取那两行在 `learningSuppressed()` 为真时（密码框 / 隐私模式 /
+    /// 设置里关「记忆新词」）抛 `JSONException` ⇒ catch 里 `stop(false)`，会话当场死。
+    /// 所以回显里必须有**一个合法的对象**。
+    ///
+    /// 第二条断言钉反面：这块只能是出厂默认的空对象。宿主把这份文件当「首次安装写下的副本」，
+    /// 皮肤 / 候选条外观 / 剪贴板历史三处都专门写了「不按它重算」的分支（见
+    /// `applyEditorPreferences` 的 `live` 门），往里写用户选择会让那三分支的假设失效。
+    ///
+    /// 判别器：删掉 `prepare_host` 里 `preferences` 那一行 ⇒ 第一条红；
+    /// 把它换成 `load_document()` 那份带 `format_version`/`revision` 的外壳 ⇒ 第二条红。
+    #[test]
+    fn prepare_host_echoes_an_empty_preferences_object() {
+        let dir = std::env::temp_dir()
+            .join("qingshan-prepare-host-tests")
+            .join("preferences-block");
+        let _ = std::fs::remove_dir_all(&dir);
+        let resources = dir.join("bootstrap").join("resources");
+        std::fs::create_dir_all(&resources).expect("建资源目录");
+        std::fs::write(resources.join("dict.tsv"), "你好\tni hao\t9000\n").expect("写夹具词库");
+        let host = prepare_host(&HostRequest {
+            resources,
+            state_root: dir.join("bootstrap").join("state"),
+        })
+        .expect("夹具词库在，准备应成功");
+        let value = serde_json::to_value(host).expect("回显应可序列化");
+        assert!(
+            value.get("preferences").map(serde_json::Value::is_object) == Some(true),
+            "runtime-options.json 必须有 preferences 对象，实得 {value}"
+        );
+        assert_eq!(
+            value["preferences"]
+                .as_object()
+                .expect("上面已断言是对象")
+                .len(),
+            0,
+            "这份副本是出厂默认，不该带任何用户选择，实得 {}",
+            value["preferences"]
+        );
     }
 }

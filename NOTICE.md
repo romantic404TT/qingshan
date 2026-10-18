@@ -84,6 +84,10 @@ README"——后者已在当天 18:19–18:20 出过并验过第一个发布包�
      回到同一个框也会换新号，不能当键）。**不改任何交互、不加符号**（导出仍是 102 个，
      `engine/tools/verify_symbols.py` 双向差集为空），也不动 `stop()`/`destroy` 的调用时机。
      Java 树其余 393 个文件逐字未改（第 7 条另计一处，改后为 392 个）。
+   **追加（2026-10-18 21:40，用户拍板「待办 36 乙」）**：同一个文件又改了 **2 处**（改前 `:1298` 与 `:7599`，现 `:1306` 与 `:7614`，各 2 行代码 + 4 行注释）：
+   两处 `options.getJSONObject("preferences")` 之前各加一句「缺时先 `put` 一个空对象」。
+   理由与真机读数见 `third-party/PIN.md`「P0 隐私死锁修复与假入口清理」；这是**第 1 处破例
+   那个文件的续修**，不另计处数（未改文件数改口见第 10 条末尾）。
 2. 宿主树**未取**上游两个 Kotlin 插件文件
    （`java/app/msime/android/account/AccountPlugin.kt`、`java/app/msime/android/voice/VoicePlugin.kt`）。
    它们只被一处 javadoc `{@code}` 提及，不构成编译依赖；`java`+`res` 文件数 539 对上游 541。
@@ -150,8 +154,23 @@ README"——后者已在当天 18:19–18:20 出过并验过第一个发布包�
    **4 个**、`Only in qingshan` 0 个、`find host/java -name "*.java"` 394 个 ⇒ 仍 **390 个逐字未改**
    （本轮改的是已经计入的那一个文件）。
    **实测口径**：`diff -rq msime-develop/platforms/android/java qingshan/host/java` 得「differ」4 个文件
-   （MSIMEInputService / KeyboardOptionsPage / UpdateJobService / InputDiagnosticPolicy），
-   `Only in qingshan` 0 个；`find host/java -name "*.java"` 394 个 ⇒ **390 个逐字未改**。
+   （MSIMEInputService / ImePanels / KeyboardOptionsPage / UpdateJobService / InputDiagnosticPolicy），
+   `Only in qingshan` 0 个；`find host/java -name "*.java"` 394 个 ⇒ **389 个逐字未改**。
+   （现值 2026-10-18 21:40 轮 AI 实测：differ **5 个**、`Only in qingshan` 0 个、`find` 394 个
+   ⇒ 389 个未改；比上一记多出来的那一个就是第 10 条的 `ImePanels.java`。）
+
+10. `host/java/app/msime/android/core/ImePanels.java` 改了 **2 行**（1 处）——
+   宿主 Java 树的**第 6 处破例**（2026-10-18 用户拍板「待办 37 顺手修掉」）：
+   `renderSchemePicker` 里取列表那一行（现 `:1041-1043`，改前 `:1036`）由
+   `= s.visibleSchemes` 改成先拷一份、再 `schemes.remove(KeyboardScheme.QUANPIN_NINE_KEY)`。
+   理由：键盘上这个「输入方案选择器」是九键的**第二个入口**，而九键面板在本项目画不出来
+   （布局从引擎回声的 View 算，`engine/src/view.rs:184` 恒 `false`、`:189` 恒 `TwentySixKey`）；
+   第 9 条只挡掉了设置页那一行。**为什么是剔除而不是标灰只读**：这是一张会按下去的卡片，
+   留着它灰着不动就是「用户按了、什么都不发生、然后自己猜」，正是待办 30 立项时那个病；
+   设置页那条是只读说明行，上游本来就有一句降级文案，两处形状不同。
+   **已知残留**（与第 9 条同族）：存储里已经是九键的老用户，这里没有卡片会高亮
+   ——实际键盘本来就是 26 键，去「输入」页换一次方案再换回来即可复位。
+   native 导出仍是 102 个（本轮没加符号；Rust 侧改的是 `assemble.rs` 的回显**内容**，不是接口）。
 
 ## 随包数据
 

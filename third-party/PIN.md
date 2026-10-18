@@ -787,6 +787,18 @@ AGP 9.x 要求 Gradle 9.6+），升 AGP 会直接破坏构建。
     `{"version":1,"settings":{…}}`，我按顶层 `json["platform.android.incognito"]` 取值读出 `None`，
     当场把"开关落盘成功"记成"开关没生效"。**值不对时先怀疑取法，别先怀疑被测对象**。
 
+87. **用子串匹配判 JSON 结构会自己被同前缀的键蒙过去**（2026-10-18 轮 AI 当场犯）：
+    我写 `"preferences" in open("runtime-options.json").read()` 去判「有没有 `preferences` 块」，
+    而那个文件里有 `preferences_directory` ⇒ **旧文件被读成"已经有块了"**，差点把「乙单独生效」
+    这个前提判反。判结构要 `json.loads(...)` 之后看类型（陷阱 48/86 同族：先怀疑量具，
+    再怀疑被测对象）。
+88. **删掉 `runtime-options.json` 之后 `am start` 不会重新准备**（实测）：Bootstrap 只在服务/进程
+    重建时跑一次，Activity 复活不算。让它重写要 `am force-stop app.qingshan.ime` + `ime set`——
+    而这一组合按陷阱 82 会把输入法回落成搜狗 ⇒ **做完必须重新验 `mCurMethodId`**。
+89. **`user.tsv` 的行序不是写入序**（实测：新写的一行不在末尾，`tail` 出来的还是上周那几条）：
+    它是整表重写、按权重排。所以「最后一行 = 刚写的那条」这个读法不成立，
+    **要按词去查那一行在不在、计数对不对**（本轮就是靠"同一个词两方向对照"而不是 `tail`）。
+
 ## 方案 A 实现与真机验收（2026-10-14 03:06–03:25）
 
 用户拍板：**只做 A（退格即撤销），B/C/D/E 全不做。**
@@ -5739,6 +5751,83 @@ gen=10->10 adv=false table=0->0     editing=""        ← 切焦点那一次（f
 `mStayOnWhilePluggedInSetting=0`、`mCurMethodId` 是我们、输入方案 全拼 26 键、
 `preferences.json` 仍 `"learning": true` / `revision 21`）。
 
+## P0 隐私死锁修复与假入口清理（2026-10-18 21:00–21:45，**host/java 改 3 处 / 2 个文件**）
+
+### 一、上一轮那条 P0 的成因链，本轮补到最后一环
+
+`Bootstrap.java:57` 把 `prepareHostRaw` 回的 `value` **原样**写进 `files/runtime-options.json`；
+我们的 `assemble.rs` 只回 `{resources, state_root, preferences_directory}` 三个键，
+那块 `preferences` 从来就没有过。宿主把它当「首次安装写下的出厂默认副本」用，
+`MSIMEInputService.java:1279` 是软取（`optJSONObject`），而我们轮 AF/AG 加的两行是硬取
+（`getJSONObject`）——**同一份文档、同一个键，两种取法，只有硬取会抛**：
+
+| 位置（改前 → 现）| 取法 | 触发条件 | 抛出去之后 |
+|:---|:---|:---|:---|
+| `:1279` | `optJSONObject` | 每次 `onStartInput` | 拿到 null，各处按默认走 |
+| `:1298` → `:1306` | `getJSONObject` | `engineWanted` **且** `learningSuppressed()` | `:1303` catch → `stop(false)` → 横幅「共享运行时未就绪：仅直接输入」 |
+| `:7599` → `:7614` | `getJSONObject` | 用户在功能面板点「隐私模式」 | `:7603` catch → 只设横幅，**连重建会话都不发起** |
+
+**影响面比上一轮写的窄一格，也更准**：`policy/EditorPolicy.java` 的 `useEngine(int type)` 对
+`TYPE_TEXT_VARIATION_PASSWORD` / `VISIBLE_PASSWORD` / `WEB_PASSWORD` 返回 `false`，而 `:1298`
+在 `if (engineWanted)` 里面 ⇒ **密码框根本走不到这一行**（它本来就不建会话，与轮 AF 撤回
+「密码框上屏写 `user.tsv`」那次是同一件事）。真正撞它的是「走引擎 ∧ `learningSuppressed()`」：
+隐私模式开、设置里关「记忆新词」、应用带 `IME_FLAG_NO_PERSONALIZED_LEARNING`。
+⇒ 轮 AH 那句「三类一律起不来」里的密码框一类**作废**。
+
+### 二、甲+乙，以及改前必须核的那件事
+
+- **甲**（`engine/src/assemble.rs`）：回显加 `"preferences": {}`，值取
+  `preferences::load_document()` 里面那一块，取不到兜一个空对象。修的是契约缺口。
+- **乙**（`MSIMEInputService.java:1306`、`:7614`，改前 `:1298`/`:7599`）：硬取前各加一句
+  「缺时先 `put` 一个空对象」。**只有乙能救已经装机上的设备**——那份文件是旧版写的，
+  甲要等下一次真正重新准备才落到盘上（见陷阱 88）。
+- 甲把 COPY 路径从 `null` 换成 `{}`，所以改前逐个核了 `applyEditorPreferences` 的 20 多个取值点：
+  全是 `preferences == null ? 默认 : optXxx(同一个默认)`；皮肤 / 候选条外观 / 键位几何另有
+  `live` 门（`:752`、`:762`、`:764`）；唯一三态那处是剪贴板
+  （`Boolean preference = preferences == null ? null : optBoolean(..., false)`），被
+  `ClipboardHistoryRetentionPolicy` 的 `if (source != Source.LIVE || preference == null) return current;`
+  挡在前面 ⇒ **`null` 与 `{}` 在这条路径上逐字段等价**。真机复看外观没跳（候选条仍带英文释义、
+  皮肤仍「跟随系统」、方案仍全拼 26 键）。
+- 单测 `prepare_host_echoes_an_empty_preferences_object` 两条断言：必须**有**那块（先红，
+  实得正是设备上旧文件的三个键）；且那块必须是**空**对象——往里塞用户选择会让上面那三个
+  `live` 门的假设失效。117 → **118**。
+
+### 三、待办 37：为什么选「剔除」不选「标灰只读」
+
+`core/ImePanels.java` 的方案选择器卡片来自 `s.visibleSchemes`（`renderSchemePicker`，现 `:1041`）。
+九键在这里画不出来这件事与设置页同根（布局从引擎回声的 View 算，
+`engine/src/view.rs:184` 恒 `false`、`:189` 恒 `TwentySixKey`）。本轮在取列表之后剔掉
+`QUANPIN_NINE_KEY`（2 行代码）。形状不同的地方在于：设置页那一行是**只读说明**，
+上游本来就有「本方案只有一种键盘」那句文案；而这里是一张**会按下去的卡片**，
+留着它灰着不动就是「用户按了、什么都不发生、然后自己猜」——那正是待办 30 立项时的病。
+已知残留与 NOTICE 第 9 条同族：存储里已是九键的老用户在这里没有卡片高亮。
+
+### 四、真机四格（先跑在旧文件上＝乙单独生效，再跑在新文件上＝甲也生效）
+
+| 格 | 读数 |
+|:---|:---|
+| 隐私模式开 | `android-settings.json` 落 `incognito:true`；候选 **4 格**（修前这里是 0 格）；「中国」上屏；离开输入框后 `user.tsv` **15→15 行、无「中国」**；卡片 `enabled=true` ⇒ **关得回去**，不再是单向门 |
+| 隐私模式关（对照）| 同一个入口再点一次 → `incognito:false`；「北京」上屏 → `user.tsv` **15→16 行、`北京\t1`** |
+| 设置里关「记忆新词」| `preferences.json` `rev 21→22` + `learning:false`；候选 **4 格**、「中国」上屏、档**不涨**；开回来 `rev 23`、「图书馆」落 `图书馆\t1` |
+| 密码框 / 金路径 | 密码框打 `laoshi` 保持既有形状（不建会话、字面进框）；`pengyou`→`朋友` 正常；四段 `FATAL EXCEPTION` 全 **0** |
+
+**这两格同词对照就是轮 AG 欠的那条真证**：「不涨」发生在活会话上（候选出得来、字上得了屏），
+所以它是 `MutedLearner` / `set_private` 挡住的，不是死会话没写。反方向那一格用**同一个词**
+（隐私）或**同一开关的两态**（记忆新词）跑，排除了"换个词恰好没学到"这种解释。
+
+甲落地：删掉 `runtime-options.json` 后 `am start` **不会**重新准备（见陷阱 88），
+`force-stop` + `ime set` 之后新文件 254 B，顶层键比旧文件**只多** `preferences` 一个，
+`resources` / `state_root` / `preferences_directory` 与旧文件逐字相同 ⇒
+`Bootstrap.java:376-377` 那条 canonical 比对不受影响，「升级包永不重解包」那条硬约束照旧成立。
+
+### 五、闸门（全部本轮现测）
+
+`cargo test --release` **118 passed / 0 failed**、`cargo fmt -- --check` **27 hunk 全在 `lib.rs`**
+（新代码在 `assemble.rs`，一个 hunk 没加）、符号 **102/102 两 ABI**、`.so` 磁盘 **4,523,424 / 4,783,968**、
+`clean assembleDebug` APK **50,225,465**、`verify_apk` 全 True、`scan_bridges` 62 = **real 39 + 桩 23、
+杀会话维持 0**、`diff -rq` 上游 java 树 **differ 5 个 / Only in qingshan 0 / find 394 ⇒ 389 个逐字未改**、
+真机 `FATAL EXCEPTION` **0**。
+
 ## 待办
 
 
@@ -6467,7 +6556,8 @@ gen=10->10 adv=false table=0->0     editing=""        ← 切焦点那一次（f
     ② 弹菜单那段时间 generation 有没有被推进（推进就得回 `Passthrough`，那正是"点了没反应"）。
     **便宜做法**：临时探针在三道门各打一行 `tracing::info!`，装机点一次看日志，跑完还原 + `touch`。
 
-36. **任何「不许学习」的输入框，会话都起不来（P0，优先级最高）**（2026-10-18 轮 AH 立，本轮代码改动 0 于这一项）：
+36. **（已关闭 2026-10-18 21:40 轮 AI，甲+乙都落了；立项时把影响面写宽了一格——密码框走 `useEngine` 判 false，从来碰不到这一行）**
+   任何「不许学习」的输入框，会话都起不来（P0，优先级最高）（2026-10-18 轮 AH 立）：
     `qingshan/engine/src/assemble.rs:52-56` 的 `prepareHost` 回显缺 `preferences` 块 ⇒
     `files/runtime-options.json` 里没有那一块；我们加的 `MSIMEInputService.java:1298` 与 `:7599`
     用硬取 `getJSONObject("preferences")`，只在 `learningSuppressed()` 为真时执行 ⇒ 抛 `JSONException`
@@ -6480,7 +6570,8 @@ gen=10->10 adv=false table=0->0     editing=""        ← 切焦点那一次（f
     （甲需要删掉 `files/runtime-options.json` 让 Bootstrap 重新准备才生效）。
     **重开条件**：本轮已定位到行，等拍板选甲/乙/甲+乙；修完必须补三格真机（密码框、隐私模式、关「记忆新词」）
     + 撤回答题（见本节第六小条）。
-37. **键盘侧「输入方案选择器」里仍有「全拼 9 键」卡片**（2026-10-18 轮 AH 顺带实测，代码改动 0）：
+37. **（已关闭 2026-10-18 21:40 轮 AI：卡片从列表里剔掉，真机复看列表已无九键）**
+   键盘侧「输入方案选择器」里仍有「全拼 9 键」卡片（2026-10-18 轮 AH 顺带实测）：
     待办 30 方案 A 挡掉的是**设置页那一行**（`KeyboardOptionsPage`），但快捷栏「输入方案」弹出来的
     卡片列表（实测读到「输入方案卡片 全拼 9 键」等 8 张）没挡 ⇒ 用户仍然能把方案选成九键，
     而九键面板在本项目不可达（布局从 View 算，恒报 26 键）。**同一族"入口没关干净"，别一个个当独立 bug**，

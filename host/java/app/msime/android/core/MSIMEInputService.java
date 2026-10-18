@@ -1295,7 +1295,16 @@ public final class MSIMEInputService extends InputMethodService {
             runtimeOptionsBase = "";
             if (engineWanted) {
                 runtimeOptionsBase = options.toString();
-                if (learningSuppressed()) options.getJSONObject("preferences").put("learning", false);
+                if (learningSuppressed()) {
+                    // 待办 36 乙：这份副本可能没有 `preferences` 块（我们 `prepareHostRaw` 的旧回显
+                    // 就缺它，已装机上的 `runtime-options.json` 是那一版写的），而上一行紧邻的
+                    // `:1279` 用的是软取。硬取在缺块时抛 JSONException，被下面的 catch 变成
+                    // `stop(false)` ⇒ 密码框 / 隐私模式 / 关「记忆新词」的会话当场起不来。
+                    // 缺时先建一个空的：这个 options 只喂这一次建会话，不写回盘。
+                    if (options.optJSONObject("preferences") == null)
+                        options.put("preferences", new JSONObject());
+                    options.getJSONObject("preferences").put("learning", false);
+                }
                 runtimeOptionsForSnapshot = options.toString();
                 message = "共享运行时准备中";
                 scheduleEngineStartup(runtimeOptionsForSnapshot, startGeneration);
@@ -7596,7 +7605,14 @@ public final class MSIMEInputService extends InputMethodService {
         if (panelOpen) imePanels.showFeedbackMenu();
         try {
             JSONObject options = new JSONObject(runtimeOptionsBase);
-            if (learningSuppressed()) options.getJSONObject("preferences").put("learning", false);
+            if (learningSuppressed()) {
+                // 与 `:1298` 同一条硬取，同一个缺块（见那里的注释）。这一处是用户刚在功能面板
+                // 点了「隐私模式」之后走的：抛出去就是「开了隐私模式 ⇒ 键盘不能打字，而且卡片
+                // 被 `ready = session != 0` 门禁挡住，连关都关不掉」。
+                if (options.optJSONObject("preferences") == null)
+                    options.put("preferences", new JSONObject());
+                options.getJSONObject("preferences").put("learning", false);
+            }
             runtimeOptionsForSnapshot = options.toString();
             message = "共享运行时准备中";
             scheduleEngineStartup(runtimeOptionsForSnapshot, ++engineStartGeneration);
