@@ -2,7 +2,7 @@
 //
 // 这些是非输入路径的 native 方法占位实现：签名逐位对齐 Java 声明，返回
 // {"ok":false,"error":"not_implemented"}，靠水杉 Java 自身的降级分支（fail()）失效。
-// 真实现的 27 个在 lib.rs，合计 102 个符号一个不能少。
+// 真实现的 28 个在 lib.rs，合计 102 个符号一个不能少。
 
 use jni::objects::JObject;
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jshortArray, jobject};
@@ -63,7 +63,7 @@ macro_rules! stub_boolean {
     };
 }
 
-// bytes 返回，67 个
+// bytes 返回，66 个
 stub_bytes! {
     Java_app_msime_android_NativeClient_accountSettingsApplyRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_accountSettingsExportRaw(jbyteArray _request);
@@ -114,7 +114,6 @@ stub_bytes! {
     Java_app_msime_android_NativeClient_resourcePacksRaw(jbyteArray _request);
     Java_app_msime_android_NativeClient_restoreDefaultPreferencesRaw(jbyteArray _directory, jlong _expected_revision);
     Java_app_msime_android_NativeClient_setNineKeyModeRaw(jlong _session, jboolean _enabled);
-    Java_app_msime_android_NativeClient_setPrivateSessionRaw(jlong _session, jboolean _enabled);
     Java_app_msime_android_NativeClient_shuangpinKeyHintsRaw(jbyteArray _profile);
     Java_app_msime_android_NativeClient_simplifiedToTraditionalRaw(jbyteArray _text);
     Java_app_msime_android_NativeClient_smartPunctuationArmRaw(jlong _session, jbyteArray _request);

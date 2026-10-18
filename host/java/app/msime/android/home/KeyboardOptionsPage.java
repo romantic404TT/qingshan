@@ -287,7 +287,7 @@ public final class KeyboardOptionsPage extends DetailPage {
 
     private static KeyboardScheme[] layoutPair(KeyboardScheme current) {
         return switch (current) {
-            case QUANPIN, QUANPIN_NINE_KEY -> new KeyboardScheme[] {KeyboardScheme.QUANPIN, KeyboardScheme.QUANPIN_NINE_KEY};
+            case QUANPIN, QUANPIN_NINE_KEY -> null;
             case ZHUYIN, ZHUYIN_NINE_KEY -> new KeyboardScheme[] {KeyboardScheme.ZHUYIN, KeyboardScheme.ZHUYIN_NINE_KEY};
             case JAPANESE, JAPANESE_NINE_KEY -> new KeyboardScheme[] {KeyboardScheme.JAPANESE, KeyboardScheme.JAPANESE_NINE_KEY};
             default -> null;

@@ -453,6 +453,31 @@ fn sessions() -> &'static Mutex<HashMap<u64, Session>> {
     SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// 把「这个会话不许个性化学习」真的交给 Core：两个开关一起上。
+///
+/// Core 侧 `MutedLearner`（`crates/qingjian-core/src/engine/learning/muted.rs:37`）吞的是**写**
+/// （record / record_choice / 撤销类），**读**照常转发——排序仍按已有的个人数据算。本轮的边界
+/// 就定在这条上：只「不学」，不「失忆」。`set_private` 在我们这个装配里除了学习碰不到别的东西：
+/// 预测 / 输入日志 / 生词记录 / 释义兜底四件用的都是 Core 默认的空实现
+/// （`crates/qingjian-core/src/engine/mod.rs:409` `NoPredictor`、`:423` `NoInputLogger`、
+/// `:435` `NoVocabularyTracker`、`:436` `NoGlossFiller`），而 `engine/src/assemble.rs:131-132`
+/// 只装了 learner 与 translator。
+pub fn apply_learning_policy(engine: &mut Engine, learning_allowed: bool) {
+    engine.set_learning(learning_allowed);
+    engine.set_private(!learning_allowed);
+}
+
+/// 把「这个框现在是隐私会话」告诉 Core——**只**动 `private` 这一个开关。
+///
+/// 不能顺手把 `set_learning` 一起翻开：宿主这条通道带的是 `learningSuppressed()`
+/// （`host/java/app/msime/android/core/MSIMEInputService.java:1907-1908`：密码框或隐私模式），
+/// 里面**不含**用户在设置里关掉的「记忆新词」。Core 也把这两个当独立开关
+/// （`crates/qingjian-core/src/engine/setup.rs:82`），所以这里回 `false` 只解私密，
+/// 那条学习开关留在它原来的位置。
+pub fn mark_private(state: &mut Session, enabled: bool) {
+    state.engine.set_private(enabled);
+}
+
 /// 加载词库、建会话表项，返回 session id（同时充当首个 generation）。
 ///
 /// `identity` 是输入框身份（方案甲-2）：同一个包名再次建会话时，把上次销毁前挂起的
@@ -460,6 +485,10 @@ fn sessions() -> &'static Mutex<HashMap<u64, Session>> {
 pub fn create_session(paths: &DataPaths, identity: &SessionIdentity) -> Result<u64, Error> {
     let started = std::time::Instant::now();
     let mut engine = create_engine(paths)?;
+    // 换回来的那份上下文不带这两个开关：`swap_session` 换的全是输入上下文
+    // （`crates/qingjian-core/src/engine/session.rs:57-86`），私密状态留在 Engine 上由调用方负责
+    // （同文件 `:55` 的注释）。所以在这里上一次，之后换回挂起项也不会被冲掉。
+    apply_learning_policy(&mut engine, identity.learning_allowed);
     let mut restored = false;
     if let Some(key) = identity.cache_key() {
         if identity.learning_allowed {
@@ -809,6 +838,89 @@ mod tests {
             !user_file(&paths),
             "一次上屏都没有，却写出了 {}：落盘门失效",
             paths.user_tsv.display()
+        );
+    }
+
+    /// 待办 33 的洞：私密框与「记忆新词」关从来没传给 Core，密码框上屏照样写进 `user.tsv`。
+    /// 建会话时按 `learning_allowed` 上那两个开关，私密会话上屏后**一个字节都不该落盘**。
+    #[test]
+    fn a_private_session_writes_no_learning() {
+        let paths = flush_paths("private-learning");
+        let id = create_session(&paths, &SessionIdentity::private("com.example.password"))
+            .expect("私密会话");
+        let text = commit_in(id, "nihao");
+        let weight =
+            with_session(id, |state| state.engine.learner().weight(&text)).expect("会话在");
+        assert_eq!(weight, 0, "私密会话把 {text} 记进了学习链：权重 {weight}");
+        assert!(destroy_session(id));
+        assert!(
+            !user_file(&paths),
+            "私密会话销毁后写出了 {}：密码框上屏的词进了用户词库",
+            paths.user_tsv.display()
+        );
+    }
+
+    /// 反方向的正样例：普通会话照旧学、照旧落盘——这条现在就该是绿的，
+    /// 它锁的是「别把私密开关误开到所有会话上」。
+    #[test]
+    fn an_ordinary_session_still_writes_learning() {
+        let paths = flush_paths("ordinary-learning");
+        let id =
+            create_session(&paths, &SessionIdentity::of("com.example.note")).expect("普通会话");
+        let text = commit_in(id, "nihao");
+        let weight =
+            with_session(id, |state| state.engine.learner().weight(&text)).expect("会话在");
+        assert!(
+            weight > 0,
+            "普通会话没记上 {text}：私密开关被误开到普通框上了"
+        );
+        assert!(destroy_session(id));
+        assert!(
+            user_file(&paths),
+            "普通会话销毁后 {} 还不存在：学习数据随进程丢了",
+            paths.user_tsv.display()
+        );
+    }
+
+    /// 键盘重弹那条路：`onStartInputView` 不换会话，只调 `setPrivateSession`
+    /// （`host/java/app/msime/android/core/MSIMEInputService.java:1384`），所以会话建好之后
+    /// 才得知「这是密码框」，也必须当场停止写入。
+    #[test]
+    fn marking_private_silences_a_live_session() {
+        let paths = flush_paths("live-private");
+        let id = create_session(&paths, &SessionIdentity::default()).expect("建会话");
+        with_session(id, |state| mark_private(state, true)).expect("会话在");
+        commit_in(id, "nihao");
+        assert!(destroy_session(id));
+        assert!(
+            !user_file(&paths),
+            "标了私密还在写盘：{} 里有了这个框上屏的词",
+            paths.user_tsv.display()
+        );
+    }
+
+    /// 撤掉私密标记要能恢复写入，且私密期间**读**照常——已有历史仍参与本次排序
+    /// （本轮的边界只做「不写」，不动「读」，理由见 `apply_learning_policy`）。
+    #[test]
+    fn lifting_private_restores_writes_and_keeps_reads() {
+        let paths = flush_paths("live-open");
+        let id = create_session(&paths, &SessionIdentity::of("com.example.chat")).expect("建会话");
+        commit_in(id, "nihao");
+        let learned =
+            with_session(id, |state| state.engine.learner().weight("你好")).expect("会话在");
+        assert!(learned > 0, "夹具一次都没记上，后面两条断言就没有意义");
+        with_session(id, |state| mark_private(state, true)).expect("会话在");
+        assert_eq!(
+            with_session(id, |state| state.engine.learner().weight("你好")).expect("会话在"),
+            learned,
+            "私密期间读被改掉了：排序本该照旧用已有历史"
+        );
+        with_session(id, |state| mark_private(state, false)).expect("会话在");
+        commit_in(id, "nihao");
+        assert!(destroy_session(id));
+        assert!(
+            user_file(&paths),
+            "撤了私密标记之后还是没落盘：写开关关了就再也没开回来"
         );
     }
 

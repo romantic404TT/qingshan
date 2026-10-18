@@ -727,6 +727,26 @@ AGP 9.x 要求 Gradle 9.6+），升 AGP 会直接破坏构建。
     `dumpsys window` 的 `mCurrentFocus`（要是预期包）。
     任一项不对就**停下报告**，不要开始点；靠"点了没反应"往回倒推会烧掉大量轮次。
 
+74. **`logcat -c` 放在动作之后就把自己要数的行清掉了（2026-10-18 隐私轮，假零）**：我的顺序是
+    `am start`（引擎在这一刻打「会话建立」）→ `logcat -c` → `grep -c 会话建立` ⇒ 恒 0。
+    这条假零差点被写成"密码框不建会话的证据"，其实那次计数根本没看见任何事件。
+    **规则**：要数某条日志，**先清再触发**；数完把 `grep` 的原始输出一起贴出来，
+    只贴计数就是把"没匹配"和"没发生"混成一件事。
+75. **`input keyevent 111`（ESC）不清我们引擎的组句（2026-10-18 优先显示复验轮）**：
+    我用它"清掉 nihao 再重打"，实际组句接着累积成 `nihaonihao`，第一版"顺序没变"的读数因此作废。
+    清组句在真机上的便宜做法是**连发退格**（`keyevent 67` ×20），或者走宿主的命令 3；
+    任何"重打同一串"的实验都要在重打前把 dump 里的候选行原样贴出来核对基线。
+76. **同一个 Bash 调用里"shell 重定向写文件 + python 立刻读"会读到半截（2026-10-18，白跑三轮）**：
+    `S cat /sdcard/x.xml > local.xml` 之后紧接 `python -c` 读那个 local 文件，读到 0 个节点，
+    我误判成"dump 里没有 IME 窗口"。改用 python 里 `subprocess.run([...,'shell','cat',...])`
+    直接拿 stdout 解析就正常了。**规则**：设备驱动脚本自己解析，不要把 adb 的输出交给 shell 重定向
+    再给同一个调用里的 python 读。
+77. **多窗口 dump 里"行"和"行里的标签"是两个 chunk，按标签找不到行坐标（2026-10-18）**：
+    设置页的开关行是可点 `LinearLayout`，标题与说明是它的子 `TextView`；`split('<node')` 之后
+    子节点的 chunk 里没有父节点的 `bounds`，于是"点行中心"永远算不出来。
+    要么点 `Switch` 自己的 bounds（右侧那块），要么把父 chunk 的下标取出来再回看前一 chunk。
+    另外**连点两次同一个开关 = 净效果为零**：复位类操作必须"点一次 → 读一次 → 不对再点一次"。
+
 ## 方案 A 实现与真机验收（2026-10-14 03:06–03:25）
 
 用户拍板：**只做 A（退格即撤销），B/C/D/E 全不做。**
@@ -5306,6 +5326,136 @@ APK clean 50,195,257 → **50,198,393（+3,136）**；`verify_apk` 包内容/符
    我直接开始注入，后面所有"点了没反应"都可能是这个原因，白跑了十几步。
    应先把 `mWakefulness` + 口袋模式 + `mCurrentFocus` 三项当**开工闸门**。
 
+## 隐私接线、方案 A、真机补测（2026-10-18 13:30–14:35，**host/java 改了 1 行**）
+
+用户拍板：待办 33 最高优先级本轮修掉；待办 30 选方案 A；待办 32 随真机一起补；上一轮欠的真机四格补完。
+**结果两条红灯**（优先显示真机不生效、关「记忆新词」仍写盘）与**一条推翻**（密码框根本不建会话），
+全文在下面第五节，先看结论再看数字。
+
+### 一、接线接了三处，第三处是我加的
+
+| 处 | 位置 | 做什么 |
+|---|---|---|
+| 建会话 | `engine/src/session.rs` 的 `create_session` | `apply_learning_policy(&mut engine, identity.learning_allowed)` —— 即 `Engine::set_learning(allowed)` + `Engine::set_private(!allowed)`（拍板给的那两行） |
+| 偏好快照 | `engine/src/lib.rs` 的 `updatePreferencesRaw` | `suppress_learning` 为真时除了置 `identity.learning_allowed=false`，**同时**调那同一个函数 |
+| **私密通道** | `engine/src/lib.rs` 新导出 `setPrivateSessionRaw`（`session.rs` 的 `mark_private`） | **任务书没点这一处，是我加的**：宿主讲隐私本来就有一条专用通道 `NativeClient.setPrivateSession`，我们一直拿它当桩 |
+
+为什么第三条不是可有可无：`markPrivateSession()` 的三个调用点里**有两个不重建会话**——
+`host/java/app/msime/android/core/MSIMEInputService.java:1384`（`onStartInputView`：键盘重弹时按
+新的 `EditorInfo` 重算 `allowLearning`）与 `:2261`（偏好快照之后），只有 `:1710` 在建会话之后。
+所以只在 `createRaw` 那一次上开关，**同一个会话从普通框挪到密码框**这一条就盖不住。
+`mark_private` 只动 `private` 一个开关、**不动 `set_learning`**：这条通道带的是 `learningSuppressed()`
+（同文件 `:1907-1908`＝密码框或隐私模式），里面**不含**用户在设置里关的「记忆新词」，
+把它当成学习开关回 `false` 会在每次键盘重弹时把"关学习"偷偷翻开；Core 自己也写明这是两个独立开关
+（`crates/qingjian-core/src/engine/setup.rs:82`）。调用点 `:1912-1914` 丢弃返回值 ⇒ 形状照 `focusRaw`
+走 `transition`，`handled:true` 安全。
+
+**行为跳变的范围（读码证的，不是猜的）**：`MutedLearner` 吞的是**写**、**读**照常转发
+（`crates/qingjian-core/src/engine/learning/muted.rs:37`），排序仍用已有个人数据 ⇒ 与拍板的边界一致。
+`set_private(true)` 附带关掉的预测 / 输入日志 / 生词记录 / 释义兜底，在我们这个装配里**本来就全是空实现**：
+`Engine::new` 的默认值是 `NoPredictor`（`crates/qingjian-core/src/engine/mod.rs:409`）、
+`MutedLogger(NoInputLogger)`（`:423`）、`NoVocabularyTracker`（`:435`）、`NoGlossFiller`（`:436`），
+而 `engine/src/assemble.rs:131-132` 只装了 learner 与 translator ⇒ 除学习之外没有可关的东西。
+建会话那一次上开关就够，是因为 `swap_session` 换的全是输入上下文、不碰这两个开关
+（`crates/qingjian-core/src/engine/session.rs:57-86`，同文件 `:55` 注释明确要求调用方自己恢复私密状态）。
+
+### 二、测试是先红后绿的，红样与判别器都记清楚
+
+- **RED（实测输出）**：`a_private_session_writes_no_learning` 先失败在
+  `assertion left == right failed: 私密会话把 你好 记进了学习链：权重 1（left: 1, right: 0）`；
+  同批的 `an_ordinary_session_still_writes_learning` 当时就是绿的——它是**正样例**，
+  锁的是"别把私密开关误开到所有会话上"，不是我本轮行为的证据。
+- 后两条测试引用还不存在的 `mark_private`，红在编译期：`error[E0425]: cannot find function`（3 处）。
+- **判别器探针**：把 `mark_private` 的函数体掏空跑一遍，`marking_private_silences_a_live_session`
+  红在 `session.rs:888`（那句"标了私密还在写盘"）；**但 `lifting_private_restores_writes_and_keeps_reads`
+  仍然绿**——它的三条断言在掏空之后逐条成立，所以**它是边界锁，不是判别器**，别把它当"锁住了新函数"。
+  探针还原：`grep -c PROBE-R8 = 0`、`touch session.rs`，之后全量重跑。
+- 三处站点里 `updatePreferencesRaw` 那一条**没有自己的单测**：它调的就是已被两条测试覆盖的
+  `apply_learning_policy`，站点本身要真机验（结果见第五节第 7 条——**这条真机路径没打通，
+  但不是接线的错**）。
+
+### 三、本轮闸门数字（全部现测，口径随数）
+
+| 项 | 值 | 口径 |
+|---|---|---|
+| `cargo test --release` | **115 passed / 0 failed**（111→115，本轮 +4） | 全量含 doc-test（0 条） |
+| `cargo fmt -- --check` | **27 hunk，全在 lib.rs**（26→27） | 新增那 1 条是 `setPrivateSessionRaw` 的签名——与既有 26 条同族（本项目把 JNI 参数压成一行，rustfmt 要拆开），**不是新种类的债**；`session.rs` 我把手写的长行改成 fmt 认可的换行，从 4 hunk 回到 0 |
+| JNI 符号 | **102 / 102，两 ABI 双向差集为空** | `verify_symbols.py` |
+| `.so` 磁盘 | arm64 **4,517,304**（+1,824）、x86_64 **4,775,272**（+1,992） | `ls -l` 相减，clean 前一次构建 |
+| `.so` 包内 | 4,517,296 / 4,775,264（各少 8 B，`stripDebugDebugSymbols`） | `verify_apk.py` |
+| APK | **50,200,385 B**（50,198,393 → +1,992） | `clean assembleDebug` 后 `ls -l`；**连续第五轮** APK 增量与 x86_64 的 `.so` 增量同数，arm64 那 144 B 差照旧没拆 |
+| `scan_bridges` | 调用点 62 = **real 39 + 桩 23**（38/24 → 各 ±1），**杀会话仍 0** | `--json` 的 `counts` 只有 `{real, 降级}` ⇒ 杀会话这一桶没打印=0；转真的站点是 `setPrivateSession` `:1913` |
+| 引用审计 | **571 条 = OK 205 / AMBIG 174 / MISSING-PATH 179 / NOT-FOUND 13 / LINE-OOB 0** | 552→**571**（+19 条可核引用）。**表内先记过 560**：那是文档只写完一半时的读数，写完 README 与 PIN 的本节再跑就变 571——**文档改动本身会挪动这个数**，与前两轮「拿改动前的输出当最终值」同族（README 变更日志 2026-10-14 那条），本轮起我把 audit 放到**文档全写完之后**再跑一次 |LINE-OOB 由打印脚本"计数为 0 就不打印"给出（`audit_citations.py:164-165`），我核过这条判据 |
+| 桩表 | `REAL` 27→**28**、`stub.rs` 前缀 75→**74** | `gen_stub.py` 自报"合计导出 102" |
+
+### 四、方案 A 落地：1 行 Java + NOTICE 第 9 条
+
+`host/java/app/msime/android/home/KeyboardOptionsPage.java:290` 由
+`case QUANPIN, QUANPIN_NINE_KEY -> new KeyboardScheme[] {...}` 改成 **`-> null`**。
+`layoutPair` 全树只有 `:92` 一个消费者（`grep -rn layoutPair` 三条命中：定义、这一处、一条 javadoc），
+`pair == null` 走的正是上游自己的降级出口（`:93-97`：`pairOffered=false` ⇒ 那一行变只读说明、
+点击动作传 `null`），屏幕上那句「当前方案只有一种键盘，在「输入」里换方案」是上游现成文案。
+**为什么不能只改配置**：`host/java/app/msime/android/keyboard/KeyboardScheme.java:12` 里
+`QUANPIN_NINE_KEY` 的 engine 方案与 26 键同为 `"quanpin"`，而
+`host/java/app/msime/android/core/AppEdition.java:80-82` 的 `offers(String)` 只看 engine 方案。
+
+**残留（第 2 行我没做，等拍板）**：改之前已经选过「9 键」的用户，存储里仍是 `QUANPIN_NINE_KEY`，
+`:91` 那句 `nineKey ? "9 键" : "26 键"` 让这个**只读**行继续显示「9 键」而实际键盘是 26 键，
+且现在点不动它；去「输入」页换一次方案再换回来可以复位。要让它直接显示「26 键」就是把 `:91` 改成常量，
+第 2 行，本轮按拍板只做 1 行。
+
+**顺带把 §5a 的计数口径换了**：原来那句「Java 树其余 393 个文件逐字未改（第 7 条另计一处，改后为 392 个）」
+是**减法**推出来的，而且第 8 条之后它就该是 391（原文我没改，只加了注解）。本轮改成实测：
+`diff -rq msime-develop/platforms/android/java qingshan/host/java` ⇒ differ **4 个文件**
+（MSIMEInputService / KeyboardOptionsPage / UpdateJobService / InputDiagnosticPolicy）、
+`Only in qingshan` **0 个**；`find host/java -name "*.java"` = **394** ⇒ **390 个逐字未改**。
+
+### 五、真机：过了什么、红在哪、哪条推翻了我上一轮
+
+装机 `install -r` Success；开工闸门本轮第一项就是 `mWakefulness=Dozing`，唤醒后正常（陷阱 73 的教训用上了）。
+
+| # | 项 | 结果 | 证据 |
+|---|---|---|---|
+| 1 | 金路径 | **过** | 普通框敲 `pengyou` ⇒ 组字节 `pengyou` + 候选 7 格，dump 原文「候选 1：朋友，英文释义：n. friend；长按管理」…「候选 7：朋友吧」+「展开候选」；空格上屏后框里是 `朋友` |
+| 2 | 学习正样例（新接线没把学关掉） | **过** | `user.tsv` 朋友 2→3、`user-choices.tsv` `pengyou 朋友` 2→3、`user-ngram.tsv` `<s> 朋友` 1→2；其余三档逐字节相同 |
+| 3 | 崩溃 | **0** | `logcat -d \| grep -c "FATAL EXCEPTION"` = 0（bash 现测，不用 python 包一层） |
+| 4 | 密码框 | **过，但结论反了——推翻上一轮** | 密码框里连敲 `laoshi` + 空格 ⇒ 框里是 `laoshi `（**字面空格**），无候选行、无「会话建立」⇒ **textPassword 根本不建会话**（NOTICE 第 6 条那条隐私硬门成立）。所以待办 33 里"密码框上屏的词写进 user.tsv"这句**前提不成立**，那是上一轮我读码推出来的、没上机验的话 |
+| 5 | 待办 32 的 `#+=` 页 | **过** | 键格标签：按键 1…0、`-`、`/`、`：`、`；`、`（`、`）`、`¥`、`@` ⇒ **全角**，与 `chinesePunctuation` 当前为开一致；全表存 `/d/toolchains/tmp/qx/r8_symbol_page.txt` |
+| 6 | **「优先显示」真机不生效** | **红** | 两轮各测一种候选：①`nihao` 长按第 3 格「你好像」（前缀候选）②`shi` 长按第 3 格「事」（**同长度、且 `shi` 这个键在学习档里一行历史都没有**）。两次长按菜单里都确有「优先显示」（菜单原文：优先显示 / 固定到首位 / 取消固定 / 删除词条…），点了，之后 **`user-choices.tsv` 一行都没多**（实测贴在此处），重打同一串顺序也一字不变 ⇒ **单测绿、真机不做事**，本轮没定位，立待办 35 |
+| 7 | 关「记忆新词」后不写盘 | **红，但不是接线错** | 设置页那个开关点了、`checked` 从 true 变 false（dump 实证），之后在普通框敲 `guangbo` 上屏 `广播` ⇒ `user.tsv` **多了** `广播 1`、`user-choices.tsv` 多了 `guangbo 广播 1`、`user-ngram.tsv` 多了 `<s> 广播 2`（实测差见 `/d/toolchains/tmp/qx/r8_off_*.txt` 对 `r8_now_*.txt`）。根因测到了：引擎侧那份偏好文档 `files/bootstrap/state/preferences.json`（630 B、**mtime 04:49**、revision 15）里**根本没有 `learning` 这个键**，键只有 `clipboard_history`、`last_chinese_scheme`、`scheme`、`shuangpin_profile`、`touch_keyboard_layout`、`touch_keyboard_schemes`、`traditional_chinese_output`、`usage_reporting` ⇒ 宿主递下来的 `preferences.learning` 恒缺、`session_identity` 读到缺键按默认当 true。**断链在宿主的设置持久化那一侧**，我这轮接的三处拿不到信号。立待办 34 |
+| 8 | 隐私模式正证 | **未核实** | 我的接线真正要防的就是这一条（`incognitoEnabled` 会走 `:1298`/`:2259` 把 `learning` 强行写成 false），但入口没找到：工具栏「更多」开出来的溢出面板里没有「隐私模式」（面板标签实测：floating_too / 自动填充 / 关闭工具栏溢出 / …），`ImeFunctionPanel.java:165` 只是消费点。⇒ **"私密会话不写盘"目前只有单测证据，没有真机证据** |
+| 9 | 三条路径 / 切输入法 | **只补了一条** | 密码框那条=#4；**启动**（`force-stop` 冷启动）与**切输入法**（切搜狗再切回）本轮没跑，仍欠 |
+
+顺带抓到一条**既有**的用户可见提示，与本轮改动无关：词库页报
+`MSIMEResourcePacks: Resource pack state unavailable: not_implemented`（logcat 原文三条时间戳），
+宿主把它翻译成「词库操作失败，请稍后重试。」——那是资源包那一族桩的现状，不是本轮引入的。
+
+### 六、我本轮的操作失误（五条，全部现场踩过）
+
+1. **`logcat -c` 放错位置造出假零**（陷阱 74）：先 `am start` 再清再数，"会话建立"恒 0。
+   第 4 条那个"密码框不建会话"的结论我是**靠 dump 里的字面 `laoshi ` 站住的**，不是靠这个假零；
+   发现之后改在触发前清、并把 grep 原文一起看。
+2. **ESC 不清组句**（陷阱 75）：第一版"优先显示顺序没变"的读数因此作废，重测才有第 6 条。
+3. **shell 重定向 + 同一个调用里 python 读**有刷盘竞态（陷阱 76）：读到 0 节点，误判成"dump 里没有 IME 窗口"，
+   白跑三轮才想到是自己的读法问题。
+4. **复位「记忆新词」时连点了两次同一个开关**（陷阱 77）：净效果不明，最后那一屏又滚过了那一行，
+   **没能确认它回到「开」**。功能上无影响（第 7 条已证明该值既不进引擎也没落盘），
+   但设置页可能停在「关」，请人工看一眼。`svc power stayon` 已按上一轮口径复位（7→0，实测）。
+5. **审计计数又拿"改到一半的读数"写进了文档**：本节表格先写的是 **560**，那是 README/PIN 还没写完时
+   跑的数；文档写完再跑是 **571**。与前两轮「拿改动之前的输出当最终值」同族（README 变更日志
+   2026-10-14 那条），**这轮起把 audit 固定放到文档全写完之后跑**，并把中途读数留在原处当历史。
+
+### 七、下一件事（按优先级）
+
+1. **待办 35**：定位 `pin_candidate` 真机为何不做事。便宜做法：临时探针把三道门
+   （`learning_allowed` / `candidate_index(generation,index)` / `CandidateKind::Chinese`）各打一行 log，
+   装机点一次看停在哪道，跑完还原 + `touch`。我的两个怀疑：宿主那个 `index` 是不是 1 基；
+   弹菜单期间 generation 有没有被推进。
+2. **待办 34**：`InputFeatureToggle.LEARNING` 的布尔值为什么没进 preferences 文档（宿主侧持久化面）。
+3. 补第 8 条的隐私模式正证（找到入口，或请用户手动开一次再跑同一套）。
+4. 补第 9 条欠的两格（启动 / 切输入法）。
+5. 待办 30 的那"第 2 行"（只读行直接显示「26 键」）等拍板。
+
 ## 待办
 
 
@@ -5934,6 +6084,10 @@ APK clean 50,195,257 → **50,198,393（+3,136）**；`verify_apk` 包内容/符
     **（现值 2026-10-18 05:05：上面那段里"实测按 `?` `;` 上屏半角"**已撤回**——本轮同一台机、
     同一版本、开关实测开着（「中文标点」格绿像素 2808）重测，123 页的字形与上屏都是**全角**
     `：；？！`。"不经 native、不杀会话"那半仍然成立。详见「剩余 3 个杀会话站点清零」第五节。**）**
+    **（现值 2026-10-18 14:35：(a)「优先显示」的真机复验是**红的**——长按菜单里确有那一项、点了、
+    但 `user-choices.tsv` 一行都没多，重打同一串顺序也不变（两种候选各测一遍，其中 `shi` 那一组
+    在学习档里本来一行历史都没有）。单测 4 条全绿、真机不做事 ⇒ **本条从"部分推进"退回"待定位"**，
+    定位路线与新开的待办 35 见「隐私接线、方案 A、真机补测」第五节第 6 条与第七节第 1 条。**）**
 30. **`setNineKeyFilter` 转真 = 「View 的 12 个零值字段」的一个具体出口**（2026-10-18 立项，
     **本轮代码净改动 0 于这一项**）：本轮坐实九键面板在青杉**永不出现**
     （布局从 View 算：`host/java/app/msime/android/core/MSIMEInputService.java:3770-3776`
@@ -5952,6 +6106,12 @@ APK clean 50,195,257 → **50,198,393（+3,136）**；`verify_apk` 包内容/符
     ② 方案 B 会**打破本轮刚拿到的杀会话归零**——`chooseNineKeySpellingRaw` 仍是桩，
     调用点 `core/ImeLayoutRows.java:1196` 的 catch 体是 `s.fail()`。
     建议 A，**等拍板**。另纠正任务书措辞：不是"恒返回 0"，是 `View.nine_key` 这个 **bool** 恒为 `false`。**）**
+    **（现值 2026-10-18 14:35：**方案 A 已落地**——`host/java/app/msime/android/home/KeyboardOptionsPage.java:290`
+    改成 `case QUANPIN, QUANPIN_NINE_KEY -> null;`，是宿主 Java 树第 5 处破例、NOTICE §5a 第 9 条；
+    真机上那一行现在只读、显示「26 键」。两处补记：① 上面那句 `:3770-3776` 应为 `:3770-3775`
+    （`touchLayout(value)` 的函数体到 3775 行收尾，本轮逐行核过）；② 已选过「9 键」的老用户
+    那一行会显示「9 键」而实际是 26 键，且现在点不动——要不要把 `:91` 一起改成常量是**第 2 行**，等拍板。
+    全文见「隐私接线、方案 A、真机补测」第四节。**）**
 31. **`glide` 滑行解码要不要做**（2026-10-18 立项）：判定乙（Core 无能力但不用改 Core，
     自建「点列 → 键序列 → 候选」≥100 行）。本轮只做了止血，**真机连"有没有触发"都没证成**
     （注入的 swipe 被编辑器选中文本手势吃掉，见陷阱 69/第四节）。
@@ -5962,6 +6122,11 @@ APK clean 50,195,257 → **50,198,393（+3,136）**；`verify_apk` 包内容/符
     ② 空组句在**字母层**按逗号那一格没单独拍（单测覆盖）。成本各几分钟。
     **（现值 2026-10-18 13:05：本轮想补，但设备卡在「口袋防误触模式」，两格都没测成，
     仍是打开状态；开工闸门见陷阱 73。**）**
+    **（现值 2026-10-18 14:35：①**补测完成**——`#+=`（宿主标签「切换到数字和符号」）那一页键格实测为
+    `按键 1…0`、`-`、`/`、`：`、`；`、`（`、`）`、`¥`、`@`，标点全是**全角**，与当时
+    `chinesePunctuation`=开一致，上一轮那句"两次半角读数最可能落在这一页"由此坐实为读数错、不是排版错。
+    ② 空组句在字母层按逗号那一格**仍没单独拍**（本轮金路径拍的是 123/符号页与上屏 `朋友`，
+    字母层空组句按逗号只走过单测）⇒ 本条还剩 ②。**）**
 33. **私密框与「记忆新词」开关从来没传给 Core**（2026-10-18 立项，**本轮代码净改动 0 于这一项**）：
     `create_engine` 只装 `FrequencyLearner`，从不调 `Engine::set_learning`
     （`crates/qingjian-core/src/engine/setup.rs:83`）或 `Engine::set_private`
@@ -5973,3 +6138,31 @@ APK clean 50,195,257 → **50,198,393（+3,136）**；`verify_apk` 包内容/符
     要修得先定两件事：① 关掉学习时"已学的词还参不参与排序"（Core 注释说照常参与）；
     ② `set_private` 与 `set_learning` 是不是同一个开关（Core 里是两个独立概念）。
     **优先级：高（隐私语义，不是体验）。** 真机验它必须走密码框那条路。
+    **（现值 2026-10-18 14:35：本轮接了三处线（建会话 / 偏好快照 / 新转真的 `setPrivateSessionRaw`），
+    四条单测覆盖，但**真机结论把它拆成三块**，本条不能整体关闭**：
+    ① "密码框上屏写 `user.tsv`"**前提不成立**——实测 textPassword 里 `laoshi` + 空格得到的是字面
+    `laoshi `、无候选、无会话，宿主那条"密码框不建会话"的硬门成立（NOTICE 第 6 条），
+    我上一轮那句是读码推的、没上机，**撤回**；
+    ② 关「记忆新词」那条**值根本没进宿主递给引擎的偏好文档**（`preferences.json` 里没有 `learning` 键），
+    所以引擎侧接了也拿不到信号 ⇒ 拆出去立**待办 34**；
+    ③ 隐私模式（`incognitoEnabled`）才是这条接线真正防得住的那一半，**真机没验到**（入口没找到）
+    ⇒ 目前只有单测证据。**结论：Core 接线已落地、可达性与正证未闭环。** 全文见
+    「隐私接线、方案 A、真机补测」第一、五节。**）**
+34. **「记忆新词」的布尔值没进 preferences 文档，所以引擎永远看到"开"**（2026-10-18 隐私轮立，
+    **优先级：高——它是那条隐私缺陷唯一在真机上可达的入口**）：设置页 `InputFeatureToggle.LEARNING`
+    （`host/java/app/msime/android/settings/InputFeatureToggle.java:19`，键 `learning`、默认 true）
+    在词库页把开关从 true 翻成 false 之后，`files/bootstrap/state/preferences.json` **mtime 与内容都没动**
+    （实测 630 B、mtime 04:49、revision 15、八张键里没有 `learning`），于是
+    `host/java/app/msime/android/core/MSIMEInputService.java:1298` 那条"缺 `learning` 就当 true"的路永远拿到 true，
+    `engine/src/lib.rs` 的 `session_identity` 与 `preferences::wants_learning_off` 都读不到用户意图。
+    **下一件事不是改引擎**，是核宿主那个开关往哪儿写（`HostStore.savePreferences` 有没有被调用、
+    还是写进了 `AndroidLocalSettings` 那条本地档）。触发重开的条件：想让用户关掉"记忆新词"真的生效。
+35. **`pin_candidate` 单测绿、真机不做事**（2026-10-18 隐私轮立，**优先级：高——待办 29(a) 的成果
+    目前是"看起来做了"**）：两轮长按→「优先显示」都没在学习档留下任何一行（`nihao`/前缀候选「你好像」
+    与 `shi`/同长度候选「事」各一次，`shi` 那一组该键历史为空，排除"被历史压住"这种解释）。
+    `pin_candidate` 只有三道门：`identity.learning_allowed`、`Session::candidate_index(generation, index)`、
+    `CandidateKind::Chinese`，所以定位就是问"停在哪一道"。两个具体怀疑：
+    ① 宿主 `editCandidate` 递来的 `index`（`host/java/app/msime/android/core/MSIMEInputService.java:6034` 的 `strictCandidateLong(id, "index")`）
+    是 **1 基**还是页内序号，与 `candidate_index` 的口径对不对得上；
+    ② 弹菜单那段时间 generation 有没有被推进（推进就得回 `Passthrough`，那正是"点了没反应"）。
+    **便宜做法**：临时探针在三道门各打一行 `tracing::info!`，装机点一次看日志，跑完还原 + `touch`。

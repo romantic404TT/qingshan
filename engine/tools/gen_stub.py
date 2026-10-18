@@ -90,6 +90,11 @@ REAL = {
     # Core 的 punctuate() 没有调用点，因为标点根本没走到引擎。契约与选路差异见
     # `engine/src/keys.rs` 的 `punctuation()`。
     "punctuationWithContextRaw",
+    # 待办 33（隐私）：宿主讲隐私本来就有一条专用通道，我们一直拿它当桩。
+    # `markPrivateSession()` 的三个调用点有两个不重建会话（键盘重弹 `:1384`、偏好快照 `:2261`），
+    # 所以建会话时上一次开关不够，这条通道必须真的落到 `Engine::set_private`。
+    # 返回值被丢弃，纯状态开关，形状照 `focusRaw`。
+    "setPrivateSessionRaw",
 }
 
 # Java 类型 -> JNI Rust 类型

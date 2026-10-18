@@ -9,7 +9,7 @@
 //! `LinkageError`。
 //!
 //! 分工：
-//! - 本文件：27 个真实现——输入路径的 8 个方法，加中/英模式切换 `setEnglishModeRaw`
+//! - 本文件：28 个真实现——输入路径的 8 个方法，加中/英模式切换 `setEnglishModeRaw`
 //!   （它被宿主的启动路径与中/英键硬解析，桩会让会话建不起来）、候选长按里的「优先显示」
 //!   `pinCandidateRaw`（走 `Learner` 记一次选择，见 `pin_candidate`）与另外三件
 //!   `fixCandidatePositionRaw` / `clearCandidatePositionRaw` /
@@ -20,9 +20,10 @@
 //!   `savePreferencesRaw` 写、`updatePreferencesRaw` 把快照画回界面
 //!   （三者必须成对，理由见 `preferences.rs`），以及剪贴板共享存储的
 //!   `mobileClipboardHistoryRaw`（切片 1：只接 `load` 与 `capture`，
-//!   其余四个操作仍回 `not_implemented`）。
+//!   其余四个操作仍回 `not_implemented`），以及隐私开关 `setPrivateSessionRaw`
+//!   （把宿主的私密标记交给 `Engine::set_private`，见 `session::mark_private`）。
 //!   **计数以 `tools/gen_stub.py` 的 `REAL` 集合为准。**
-//! - `stub.rs`：其余 75 个，由 `tools/gen_stub.py` 从 Java 声明生成，回 `not_implemented`。
+//! - `stub.rs`：其余 74 个，由 `tools/gen_stub.py` 从 Java 声明生成，回 `not_implemented`。
 //! - `session.rs`：会话表 + 宿主游标；`keys.rs`：键码与命令号分派；`view.rs`：JSON 镜像；
 //!   `wire.rs`：信封与 `byte[]` 收发；`resources_lock.rs`：随包锁的解析与长度比对；
 //!   `preferences.rs`：偏好档的读写（原子写 + 等值 CAS）、应答体的字段要求与
@@ -125,6 +126,21 @@ pub extern "system" fn Java_app_msime_android_NativeClient_focusRaw(
 ) -> jbyteArray {
     transition(&mut env, session as u64, |state| {
         state.focused = focused;
+        CommandOutcome::Consumed
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_app_msime_android_NativeClient_setPrivateSessionRaw(
+    mut env: EnvUnowned<'_>, _class: JObject<'_>, session: jlong, enabled: jboolean,
+) -> jbyteArray {
+    // 待办 33 的第二个入口：宿主有三条路走到这里，其中两条**不重建会话**——建会话之后
+    // （`MSIMEInputService.java:1710`）、键盘重弹时按新的 EditorInfo 重算（`onStartInputView` 的
+    // `:1384`）、偏好快照之后（`:2261`）。只靠 `createRaw` 那半条盖不住第二条：同一个会话
+    // 从普通框挪到密码框时 Java 不换 id。返回值在 `markPrivateSession()`（`:1912-1914`）被丢弃，
+    // 所以形状照 `focusRaw`（同为纯状态开关）走 transition。
+    transition(&mut env, session as u64, |state| {
+        session::mark_private(state, enabled);
         CommandOutcome::Consumed
     })
 }
@@ -298,6 +314,10 @@ pub extern "system" fn Java_app_msime_android_NativeClient_updatePreferencesRaw(
     let built = with_session(id, |state| {
         if suppress_learning {
             state.identity.learning_allowed = false;
+            // 光记在身份上不够：那只管挂起/换回（`session.rs` 的 `create_session` 与
+            // `destroy_session` 读它），Core 那两个写开关得当场跟上——用户在设置里关掉
+            // 「记忆新词」之后，当前这个会话的下一次上屏就不该再进 `user.tsv`。
+            session::apply_learning_policy(&mut state.engine, false);
         }
         build_view(state, id)
     });

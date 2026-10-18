@@ -124,7 +124,28 @@ README"——后者已在当天 18:19–18:20 出过并验过第一个发布包�
    缩短窗口是 1 行的最小破例面。**代价如实记**：真实失败提示的可读时间也一并从 4 秒缩到 1 秒。
    导出符号与 `deferred` 语义都不受影响（`engine/tools/verify_symbols.py` 双向差集仍为空）。
    **没动 `UpdateApi.java`，也没删 Play 来源判定**（翻回 `false` 即恢复原行为）。
-   其余 392 个 Java 文件逐字未改。
+   其余 392 个 Java 文件逐字未改。（现值 390 个，见第 9 条；这条当时就该是 391——`find host/java -name "*.java"` 得 394，
+   减去第 1、7、8 条那三个文件。本轮改用 `diff -rq` 实测，不再靠减法。**）
+9. `host/java/app/msime/android/home/KeyboardOptionsPage.java` 改了 **1 行**（1 处）——
+   宿主 Java 树的**第 5 处破例**（2026-10-18 用户拍板「待办 30 方案 A」）：`layoutPair`
+   （`:288-295`）的 `case QUANPIN, QUANPIN_NINE_KEY` 由「返回 26 键与 9 键那一对」改成 `-> null`（`:290`）。
+   理由：青杉的键盘布局是从引擎回声的 View 算的（`host/java/app/msime/android/core/MSIMEInputService.java:3770-3775`
+   的 `touchLayout(value)`），而我们 `engine/src/view.rs:184` 的 `nine_key` 恒为 `false`、`:189` 恒为
+   `TwentySixKey` ⇒ 九键面板永不出现，可设置页那一行还让用户点「9 键」，这是「静默不答应」。
+   改成 `null` 走的正是上游自己留的降级出口（同文件 `:93-97`：`pair == null` 时那一行变成只读说明、
+   点击动作传 `null`），屏幕上那句「当前方案只有一种键盘，在「输入」里换方案」是上游现成的话术，
+   不是我们新造的。**为什么不能只改配置**：`host/java/app/msime/android/keyboard/KeyboardScheme.java:12`
+   里 `QUANPIN_NINE_KEY` 的 engine 方案与 26 键同为 `"quanpin"`，而
+   `host/java/app/msime/android/core/AppEdition.java:80-82` 的 `offers(String engineScheme)` 只看 engine
+   方案 ⇒ 只要本版本有全拼，九键就被算成「提供」。
+   **已知的残留**：这一处改动之前已经选过「9 键」的用户，存储里仍是 `QUANPIN_NINE_KEY`，`:91` 那句
+   `nineKey ? "9 键" : "26 键"` 让这个只读行继续显示「9 键」，而实际键盘照旧是 26 键；去「输入」页换一次
+   方案再换回来即可复位。要在设置页直接显示「26 键」是第 2 行（把 `:91` 的判据改成常量），
+   本轮按拍板只做 1 行，多的那行留给下一次。
+   native 导出仍是 102 个（本轮没加符号），`engine/` 之外只有这一个 Java 文件动过。
+   **实测口径**：`diff -rq msime-develop/platforms/android/java qingshan/host/java` 得「differ」4 个文件
+   （MSIMEInputService / KeyboardOptionsPage / UpdateJobService / InputDiagnosticPolicy），
+   `Only in qingshan` 0 个；`find host/java -name "*.java"` 394 个 ⇒ **390 个逐字未改**。
 
 ## 随包数据
 
