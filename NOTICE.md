@@ -143,6 +143,12 @@ README"——后者已在当天 18:19–18:20 出过并验过第一个发布包�
    方案再换回来即可复位。要在设置页直接显示「26 键」是第 2 行（把 `:91` 的判据改成常量），
    本轮按拍板只做 1 行，多的那行留给下一次。
    native 导出仍是 102 个（本轮没加符号），`engine/` 之外只有这一个 Java 文件动过。
+   **追加（2026-10-18 18:20，用户拍板补第 2 行）**：同一个文件又改了 **2 处代码**（`:98` 的 `nineKey`
+   判据加上 `current != QUANPIN_NINE_KEY`；`:101` 的 `pairOffered` 加上 `pair.length == 2`）与 8 行注释。
+   合起来本条累计 **1 处 null 化 + 2 处判据 = 3 处、代码 3 行**，仍只算这一个文件、仍记为第 5 处破例。
+   **未改文件数不变**：`diff -rq msime-develop/platforms/android/java qingshan/host/java` 实测 differ 仍
+   **4 个**、`Only in qingshan` 0 个、`find host/java -name "*.java"` 394 个 ⇒ 仍 **390 个逐字未改**
+   （本轮改的是已经计入的那一个文件）。
    **实测口径**：`diff -rq msime-develop/platforms/android/java qingshan/host/java` 得「differ」4 个文件
    （MSIMEInputService / KeyboardOptionsPage / UpdateJobService / InputDiagnosticPolicy），
    `Only in qingshan` 0 个；`find host/java -name "*.java"` 394 个 ⇒ **390 个逐字未改**。

@@ -88,9 +88,18 @@ public final class KeyboardOptionsPage extends DetailPage {
         KeyboardScheme current = SchemePreferences.storedScheme(preferences, edition);
 
         GroupCard layout = GroupCard.add(target, "布局");
-        boolean nineKey = "nine_key".equals(current.touchKeyboardLayout());
+        // 青杉的键盘布局由引擎回声的 View 决定，而 View 恒报 26 键（`engine/src/view.rs:184`、`:189`）。
+        // 全拼这一对已经把 `layoutPair` 改成 null（`:299`）⇒ 那一行点不动，于是**显示值也不能再
+        // 按存储的方案算**：改之前选过「9 键」的用户存的是 QUANPIN_NINE_KEY，旧判据会让这一行
+        // 永远显示「9 键」而实际画的是 26 键。只把全拼那一支的显示钉成 26 键，
+        // 注音/日语那两对（本版本没提供时本来就走 `pairOffered=false`）保持原判据不动。
+        // 与下面 `pair.length == 2` 一起构成「全拼那对永不进 26/9 面板」的不变量
+        // ——`pickLayout` 在 `:310` 索引 `pair[1]`，长度判据是它唯一的不可达证明。
+        boolean nineKey = current != KeyboardScheme.QUANPIN_NINE_KEY
+            && "nine_key".equals(current.touchKeyboardLayout());
         KeyboardScheme[] pair = layoutPair(current);
-        boolean pairOffered = pair != null && pair[0].offeredBy(edition) && pair[1].offeredBy(edition);
+        boolean pairOffered = pair != null && pair.length == 2
+            && pair[0].offeredBy(edition) && pair[1].offeredBy(edition);
         String note = pairOffered ? null
             : pair == null ? "当前方案只有一种键盘，在「输入」里换方案" : "本版本只有一种键盘";
         layout.nav("中文键盘", note, nineKey ? "9 键" : "26 键",

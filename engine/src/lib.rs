@@ -137,12 +137,20 @@ pub extern "system" fn Java_app_msime_android_NativeClient_setPrivateSessionRaw(
     // 待办 33 的第二个入口：宿主有三条路走到这里，其中两条**不重建会话**——建会话之后
     // （`MSIMEInputService.java:1710`）、键盘重弹时按新的 EditorInfo 重算（`onStartInputView` 的
     // `:1384`）、偏好快照之后（`:2261`）。只靠 `createRaw` 那半条盖不住第二条：同一个会话
-    // 从普通框挪到密码框时 Java 不换 id。返回值在 `markPrivateSession()`（`:1912-1914`）被丢弃，
-    // 所以形状照 `focusRaw`（同为纯状态开关）走 transition。
-    transition(&mut env, session as u64, |state| {
+    // 从普通框挪到密码框时 Java 不换 id。返回值在 `markPrivateSession()`（`:1912-1914`）被丢弃。
+    //
+    // **形状刻意不是 `transition`**：`run_transition` 在动作之后 `advance()` 一次
+    // （`session.rs:278`），而代次一变，`candidate_index` 的等值校验就把宿主手里**每一个候选 id**
+    // 判成过期（`session.rs:322-328`）——这条通道每次键盘重弹都会走一遍，等于每弹一次键盘，
+    // 「优先显示 / 删除词条」这类按 id 的入口当场全废。真机探针实测到 `in gen=21 mine=28`。
+    // 所以这里只改状态、回一个最小信封（`destroyRaw` 同形），不涨代次、不重画面板。
+    let marked = with_session(session as u64, |state| {
         session::mark_private(state, enabled);
-        CommandOutcome::Consumed
-    })
+    });
+    match marked {
+        Some(()) => wire::ok_value(&mut env, json!({ "handled": true })),
+        None => wire::not_implemented(&mut env),
+    }
 }
 
 #[unsafe(no_mangle)]
