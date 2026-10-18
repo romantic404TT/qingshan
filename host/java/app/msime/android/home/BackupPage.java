@@ -98,7 +98,7 @@ public final class BackupPage extends DetailPage {
             }
             LocalBackup.Preview preview = prepared.preview();
             switch (preview.compatibility()) {
-                case NOT_A_BACKUP -> showResult("从备份恢复", "这不是水杉输入法导出的备份文件。");
+                case NOT_A_BACKUP -> showResult("从备份恢复", "这不是青杉输入法导出的备份文件。");
                 case NEWER_FORMAT -> showResult("从备份恢复", "这份备份来自更新的版本，请先把应用更新到最新版再恢复。");
                 case DAMAGED -> showResult("从备份恢复", "这份备份文件已损坏或不完整，没有恢复，本机没有任何改动。请换一份备份，或重新导出后再试。");
                 case OK -> confirmRestore(prepared);

@@ -156,8 +156,25 @@ README"——后者已在当天 18:19–18:20 出过并验过第一个发布包�
    **实测口径**：`diff -rq msime-develop/platforms/android/java qingshan/host/java` 得「differ」4 个文件
    （MSIMEInputService / ImePanels / KeyboardOptionsPage / UpdateJobService / InputDiagnosticPolicy），
    `Only in qingshan` 0 个；`find host/java -name "*.java"` 394 个 ⇒ **389 个逐字未改**。
-   （现值 2026-10-18 21:40 轮 AI 实测：differ **5 个**、`Only in qingshan` 0 个、`find` 394 个
-   ⇒ 389 个未改；比上一记多出来的那一个就是第 10 条的 `ImePanels.java`。）
+   （现值 2026-10-18 23:20 轮 AJ 实测：differ **12 个**、`Only in qingshan` 0 个、`find` 394 个
+   ⇒ **382 个逐字未改**；比上一记多出来的 7 个全在第 11 条那批品牌字替换里。
+   另：`host/res/values/strings.xml` 也改了 1 处，它不在这棵 java 树的计数里。）
+
+11. **品牌字批量替换：8 个 Java 文件 + 1 个资源文件，共 14 处字符串**（2026-10-18 轮 AJ，
+   用户拍板"低风险的就改"）——把**指"这个应用"本身**的水杉改成青杉，逐条：
+   `core/ImePanels.java`（剪贴板搜索的 contentDescription 1 处）、
+   `home/ClipboardSearchPage.java`（3 处：两句未开启/空态提示 + 复制时的 clip label）、
+   `home/HelpPage.java`（1 处行标题「键盘里没有青杉」）、
+   `home/KeyboardTryoutActivity.java`（1 处 AI 提示词）、`home/LexiconPage.java`（1 处导出文件名）、
+   `home/OnboardingActivity.java`（4 处引导文案）、`voice/VoiceRecognitionActivity.java`（1 处系统语音框提示）、
+   `home/BackupPage.java`（1 处「这不是青杉输入法导出的备份文件」）、`res/values/strings.xml`（1 处试用页说明）。
+   **改前三条逐一核过**：① 这 14 处**都不在** `home/PageId.java` 的搜索关键词里（那张表只有 4 处水杉，
+   全部留在没动的"成对档"里）；② 都不是服务声明（「水杉云 / 水杉账号 / 水杉 MCP / 水杉 ID」共约 17 处
+   刻意不改——我们没跑那些后端，改了就等于告诉用户数据进一个不存在的服务）；
+   ③ 都不参与逻辑匹配（`PageId` 与行标题是 `contains` 关系，改错一侧会让设置页搜不到那一行）。
+   **代价如实记**：§5a 的改动文件数从 5 个涨到 12 个（java 树）+ 1 个资源文件，
+   将来同步上游时这 9 个文件都要手工重放；分档全文见 `third-party/PIN.md`
+   「v1.0 综合验收与清理」第四节与 `README.md` 已知失效项第 4 条的现值。
 
 10. `host/java/app/msime/android/core/ImePanels.java` 改了 **2 行**（1 处）——
    宿主 Java 树的**第 6 处破例**（2026-10-18 用户拍板「待办 37 顺手修掉」）：

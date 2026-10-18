@@ -403,7 +403,7 @@ public final class KeyboardTryoutActivity extends AppCompatActivity {
      */
     /** 每次请求开头的系统约定：默认用简体中文回答。 */
     private static final String SYSTEM_PROMPT =
-        "你是水杉输入法里的 AI 助手。除非用户明确要求使用其他语言，一律用简体中文回答，回答简洁。";
+        "你是青杉输入法里的 AI 助手。除非用户明确要求使用其他语言，一律用简体中文回答，回答简洁。";
 
     private TextView appendBubble(String text, boolean mine) {
         LinearLayout chat = findViewById(R.id.tryout_chat);

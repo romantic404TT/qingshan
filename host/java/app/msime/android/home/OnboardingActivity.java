@@ -211,8 +211,8 @@ public final class OnboardingActivity extends AppCompatActivity {
     }
 
     private void enable(LinearLayout column) {
-        header(column, R.drawable.ic_ms_keyboard, ordinal() + " · 约 30 秒", "把水杉加进键盘",
-            "在系统设置里启用水杉，并设为默认输入法，之后在任何应用里都能直接用。");
+        header(column, R.drawable.ic_ms_keyboard, ordinal() + " · 约 30 秒", "把青杉加进键盘",
+            "在系统设置里启用青杉，并设为默认输入法，之后在任何应用里都能直接用。");
         boolean enabled = ImeSetup.enabled(this);
         boolean current = enabled && ImeSetup.isDefault(this);
         LinearLayout card = card(column, 6);
@@ -272,7 +272,7 @@ public final class OnboardingActivity extends AppCompatActivity {
     }
 
     private void translation(LinearLayout column) {
-        header(column, R.drawable.ic_onboarding_translate, ordinal() + " · 水杉的特点", "候选下方就是译文",
+        header(column, R.drawable.ic_onboarding_translate, ordinal() + " · 青杉的特点", "候选下方就是译文",
             "打开后，每个候选词下面会多一行小字的英文释义，来自随应用打包的离线词典，不联网。");
         JSONObject preferences = preferences();
         // 与方案页一样：拨动后先记下、立即按它显示，偏好可读后再写进去。
@@ -431,7 +431,7 @@ public final class OnboardingActivity extends AppCompatActivity {
                     syncRetries++;
                     retryHandler.postDelayed(this::syncChoices, SYNC_RETRY_DELAY_MS);
                 } else if (choices) {
-                    note = "暂时保存不了，已记下选择，下次打开水杉时再保存";
+                    note = "暂时保存不了，已记下选择，下次打开青杉时再保存";
                 }
             } else {
                 syncRetries = 0;

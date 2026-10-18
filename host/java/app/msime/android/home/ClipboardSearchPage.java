@@ -129,11 +129,11 @@ public final class ClipboardSearchPage extends DetailPage {
         card.card().removeAllViews();
         switch (state) {
             case LOADING -> card.note("正在读取…");
-            case OFF -> card.note("剪贴板历史未开启，可在「隐私」里开启。开启后，用水杉键盘时复制的文字会记在这里。");
+            case OFF -> card.note("剪贴板历史未开启，可在「隐私」里开启。开启后，用青杉键盘时复制的文字会记在这里。");
             case FAILED -> card.note("剪贴板历史读取失败，请稍后重试");
             case READY -> {
                 if (items.isEmpty()) {
-                    card.note("剪贴板历史里还没有记录。用水杉键盘时复制的文字会记在这里。");
+                    card.note("剪贴板历史里还没有记录。用青杉键盘时复制的文字会记在这里。");
                     return;
                 }
                 List<ClipboardHistory.Item> shown = ClipboardSearchPolicy.filter(items, query.text);
@@ -182,7 +182,7 @@ public final class ClipboardSearchPage extends DetailPage {
 
     private void copy(ClipboardHistory.Item item) {
         if (busy) return;
-        ClipboardActions.copyText(requireContext(), "水杉剪贴板历史", item.text(), "已复制");
+        ClipboardActions.copyText(requireContext(), "青杉剪贴板历史", item.text(), "已复制");
         if (ClipboardEditPage.returnsToCaller(getArguments())) leave();
     }
 

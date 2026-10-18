@@ -32,7 +32,7 @@ public final class HelpPage extends DetailPage {
         typing.value("换皮肤与布局", "键盘工具条上的衣架换皮肤，滑块调按键高度和间距。", null);
 
         GroupCard trouble = GroupCard.add(column, "遇到问题").withDividers(Ui.ROW_PADDING_H);
-        trouble.value("键盘里没有水杉", "回到上面的启用步骤确认开关已打开；开过仍看不到时，点输入框右下角的键盘图标翻一下列表。", null);
+        trouble.value("键盘里没有青杉", "回到上面的启用步骤确认开关已打开；开过仍看不到时，点输入框右下角的键盘图标翻一下列表。", null);
         trouble.value("社区连不上", "社区目录不需要登录就能读。读不出来时多为网络或服务端限流，过一会儿再试。", null);
         trouble.value("更新后行为变了", "词库随版本更新。确认装的是最新版本，或在发布页查看这一版改了什么。", null);
 

@@ -799,6 +799,21 @@ AGP 9.x 要求 Gradle 9.6+），升 AGP 会直接破坏构建。
     它是整表重写、按权重排。所以「最后一行 = 刚写的那条」这个读法不成立，
     **要按词去查那一行在不在、计数对不对**（本轮就是靠"同一个词两方向对照"而不是 `tail`）。
 
+90. **测"退格撤销学习"必须按被删词的字面数按 ⌫，一次都不能多**（2026-10-18 轮 AJ，连着错三次）：
+    `is_erased()` 的定义是 `chars > 0 && erased == chars`（`qingjian/crates/qingjian-core/src/engine/commit/last.rs:53`）
+    ⇒ 两字词要按**两次**；而多按一次会落到 `note_backspace` 的 else 分支
+    `recent_commits.clear()` + `chain.reset()`（同库 `engine/composing.rs:142`），
+    **把要退的那笔账本整个清空**，症状是"撤销根本不生效"。测账本型行为前先读它的
+    **完成条件**与**清空条件**，别拿"看起来自然的手势次数"当口径。
+91. **`rm` 的路径写错也照样返回"成功"，删完必须 `ls` 复核**（本轮自己踩）：我把
+    `files/qingshan/$f` 写成 `files/$f`，前四个 `rm` 打在不存在的路径上而循环继续跑，
+    我一度以为设备已清空——`run-as` 的报错只出现在 stderr，用 `subprocess` 取 stdout 时**一个字都看不见**。
+    同理 `Only in` / No such file 这类"没删成"的信号必须显式核对。⇒ 删类操作后必附一条 `ls`。
+92. **设备 UI 上的入口找不到时，先把"落在哪一页"打出来再继续**（轮 AJ 剪贴板那格）：我在首页与
+    设置页两轮都拿到同一张卡片列表（标签含「青杉输入法 / 已启用 · 全拼 26 键 / 设为默认输入法」），
+    说明**那次点击根本没进设置页**，而我差点据此判"功能没有入口"。判"未测"要有落点证据，
+    不能把"我没走到"写成"它不存在"。
+
 ## 方案 A 实现与真机验收（2026-10-14 03:06–03:25）
 
 用户拍板：**只做 A（退格即撤销），B/C/D/E 全不做。**
@@ -5828,6 +5843,73 @@ gen=10->10 adv=false table=0->0     editing=""        ← 切焦点那一次（f
 杀会话维持 0**、`diff -rq` 上游 java 树 **differ 5 个 / Only in qingshan 0 / find 394 ⇒ 389 个逐字未改**、
 真机 `FATAL EXCEPTION` **0**。
 
+## v1.0 综合验收与清理（2026-10-18 22:40–23:25，**host 改 15 处 / 9 个文件**）
+
+用户宣布 Phase 1 & 2 收官，本轮起进"综合验收与清理"。三件事：设备复位、品牌字、六格验收。
+
+### 一、六格读数（每格都有 dump 或档面证据，不是"看起来正常"）
+
+| 格 | 读数 | 判定 |
+|:---|:---|:---|
+| ① 中英混输 | `nihao`→候选 6 格、上屏「你好」；`hello`→候选 8 格**全是拼音切分**（河洛 / 和 / 喝 / 呵…）；`world`→「我让来的」 | 中文过；**英文这半能力没接**（装配缺英文词表，见下） |
+| ② 剪贴板 | 偏好 `clipboard_history=False`（rev 23）⇒ 复制后不生成 `files/MSIME/clipboard_history.json`、快捷栏「剪贴板」面板可开且空态不崩 | 空态过；**整链本轮未测**（开关没导航到） |
+| ③ 撤销与纠错 | 上屏蓑衣（3→4）→ **按字数按两次** ⌫ → 同段 `suoyi` 选所以 → 落盘 蓑衣**回到 3**、`suoyi→蓑衣` 3→3、所以 3→4 | **过**（退账真落到盘上） |
+| ④ 中文标点联动 | 开→上屏 `，`；点一次关→ `,`；再点→ `，` | **过**，且随点随变 |
+| ⑤ 旋转与生命周期 | 组字中 `nihao` 6 格 → `cmd window user-rotation lock 1` + `fixed-to-user-rotation` → `mCurrentOrientation=1`、横屏键盘 26 键在、候选 0（上游丢组字，已记待办 26/21，不算 bug）→ 转回竖屏仍能打字上屏「世界」 | **过**，`accelerometer_rotation` 与两条 window 设置按原值恢复 |
+| ⑥ 跨 App | 微信首屏 `AccountExpiredUI` 0 输入框、短信会话列表 0 输入框 ⇒ 换便签（点「新建」→ `NoteViewRichEditActivity` 2 框）：便签组字 7 格 → 切自己调试页上屏「我们」→ 回便签继续组字正常；两个 App 的上屏都进了同一份 `user.tsv` | **过**（换 App 的理由是设备现实，不是偷懒） |
+
+全程 `FATAL EXCEPTION` **0**（六格各自 `logcat -d` 计数，不是收尾一次性看）。
+
+### 二、③那一格我错了四次，最后一次才对
+
+第一次：`clear_box` 连发 4 次 DEL ⇒ 第 1 次把上屏那笔进 `erased`，第 2 次起没有可退记录，
+落到 `note_backspace` 的 else 分支 `recent_commits.clear()` + `chain.reset()`
+（`crates/qingjian-core/src/engine/composing.rs:142`）——**我自己把撤销窗口清了**。
+第二、三次：改成"只按一次 ⌫"，读数仍是"没退"；但 `is_erased()` 的定义是
+`self.chars > 0 && self.erased == self.chars`（`engine/commit/last.rs:53`）——
+两字词「蓑衣」要**恰好两次**才算删干净，一次不够。
+第四次照字数按两次 ⇒ 退账成立。**教训**：这类"账本"型行为，测之前必须先读**它的完成条件**
+（`erased == chars`）与**它的清空条件**（else 分支），否则测的是自己的量具。⇒ 陷阱 90。
+
+### 三、④那一格顺带澄清的一个"预期错"
+
+面板上的「中文标点 / 全角」这类开关**不写偏好档**：`toggleChinesePunctuation`
+（`MSIMEInputService.java:4486`）只做 `applyChinesePunctuation(!chinesePunctuation)` + 重建键行，
+旁边 `toggleFullWidthInput` 的注释写明 "this session; the shared setting supplies the next
+session's default"。所以我第一版拿 `preferences.json` 的 `rev` 没动当"联动失效"证据是错的——
+**rev 本来就不该动**。真正的判据是上屏那个字符本身（半角 `,` / 全角 `，`）。
+另一条量具教训：键面 content-desc 恒是「常用标点：，」，**不能**拿来判开关状态（画出来的字形会变，
+desc 不变）。
+
+### 四、品牌字：为什么"改 14 处"比"全改"对
+
+`grep -rno 水杉 host/java host/res` = 87。分类之后是 34 注释 / 35 Java 字符串 / 11 XML（其中 6 条真资源）。
+只动 A 档（把"这个应用"叫成水杉的 14 处，9 个文件）。三档留着，各有一条硬理由：
+**成对档**——`PageId` 的 4 处是设置页搜索关键词（`:109`/`:111` 用 `contains` 与行标题一起匹配），
+只改一侧 = 那一行搜不到，且我们树里没有上游那条 `SettingsSearchIndexSmoke`（少了一道机器闸门）；
+**服务声明档**——「水杉云 / 水杉账号 / 水杉 MCP / 水杉 ID」约 17 处指的是**上游在运营的后端**
+（`res/values/strings.xml` 里那条注释写明我们的 client ID 刻意留空），改成青杉 = 告诉用户数据进一个
+不存在的服务，那是说谎不是改名；**事实准确档**——`DownloadPage:31` 的 URL 就是 `msime.app`，
+label 说「水杉下载页」是对的；`AppIconStyle:18`「深绿描线的水杉」讲的是那棵树。
+代价如实记：上游 java 树 differ 5 → **12**、`res/values/strings.xml` 1 个，逐字未改 389 → **382**。
+
+### 五、中英混输这格缺的是什么
+
+Core 的口是有的：`Engine::with_english(WordList)`（`crates/qingjian-core/src/engine/setup.rs:370`），
+我们 `engine/src/assemble.rs` 的 `create_engine` 只装了 learner + translator。
+⇒ 待办 39：要么喂一份英文词表（数据文件 + 1 处装配，随包资源的硬约束照旧：必须在
+`host/assets/dictionary/`），要么在 README 明确"本版本不做中英混输的英文候选"。
+**本轮不动**——这是产品承诺问题，不是 bug。
+
+### 六、闸门与设备复位
+
+118 passed / 0 failed、fmt 27 hunk 全在 `lib.rs`、符号 102/102 两 ABI、`clean assembleDebug`
+APK 50,225,465（**与上一版逐字节同数**：水/青/杉 都是 3 字节 ⇒ 陷阱 63 的又一例）、
+`verify_apk` 全 True、`scan_bridges` 杀会话维持 0、`install -r` Success。
+设备：`files/qingshan/` 六档清空（`ls` 复核 total 0）、`files/MSIME/` 只剩 0 字节 lock、
+`mStayOnWhilePluggedInSetting=0`、`mUserRotationMode=USER_ROTATION_FREE` + `ROTATION_0`、
+`mCurMethodId` 是我们。
+
 ## 待办
 
 
@@ -6577,3 +6659,16 @@ gen=10->10 adv=false table=0->0     editing=""        ← 切焦点那一次（f
     而九键面板在本项目不可达（布局从 View 算，恒报 26 键）。**同一族"入口没关干净"，别一个个当独立 bug**，
     但这条要先确认：用户选九键卡片之后实际发生什么（本轮没测，选卡片那一步我止步在只读观察）。
     **重开条件**：与待办 30 一起判——若决定彻底隐藏，这里要第二处 Java 破例；若决定真做九键，则是待办 30 方案 B。
+
+39. **中英混输的英文候选没接**（2026-10-18 轮 AJ 大考实测，本轮代码改动 0 于这一项）：
+    普通框打 `hello` / `world` 出的全是拼音切分（河洛 / 我让来的…），没有一条英文候选。
+    口是现成的——`crates/qingjian-core/src/engine/setup.rs:370` 的 `Engine::with_english(WordList)`，
+    而 `engine/src/assemble.rs` 的 `create_engine` 只装了 learner 与 translator。
+    要接就得随包一份英文词表（**硬约束**：必须在 `host/assets/dictionary/`，且升级包永不重解包），
+    要么就在 README 把"本版本不出英文候选"写成分期。**等拍板**，别当 bug 修。
+40. **剪贴板采集整链的真机复验还欠一次**（2026-10-18 轮 AJ，本轮记"未测"）：
+    出厂默认 `clipboard_history=false` ⇒ 不生成 `files/MSIME/clipboard_history.json`、面板空态
+    （这本身是对的，`home/ClipboardSearchPage.java:132` 那句提示就是给它准备的）。
+    本轮我在设备 UI 上没走到那个开关（陷阱 92 记了落点），所以"开 → 复制 → 面板 → 粘贴 → 长按删除 →
+    刷新"这五步这一轮没有证据。**重开条件**：人手动开一次，或给 debug 包加一条偏好写入口；
+    历史上切片 1 与 replace 五结局真机验过，但那是别的轮次的读数，不当本轮证据用。

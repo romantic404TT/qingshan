@@ -1363,7 +1363,7 @@ final class ImePanels {
             // 「搜索」打开应用里可搜索的剪贴板历史页（#5973）：键盘里没有可输入的文本框，查询框放在应用里。没有可搜的记录（空或读不出）时不放。
             if (items != null && !items.isEmpty()) {
                 Button search = clipboardAction(header, "搜索", s::openClipboardSearch);
-                search.setContentDescription("在水杉应用里搜索剪贴板历史");
+                search.setContentDescription("在青杉应用里搜索剪贴板历史");
             }
             // 复制会自动记录，不再需要「保存当前」。
             clipboardAction(header, "清空", () -> {
