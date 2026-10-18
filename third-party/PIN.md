@@ -768,6 +768,25 @@ AGP 9.x 要求 Gradle 9.6+），升 AGP 会直接破坏构建。
     而那条性质本来就由函数体（只调 `set_private`）显然成立；真正会犯的错在**导出层选不选 `transition`**，
     它一个字都摸不到。绿得毫无信息量的锁会给人"这里已被保护"的错觉，比没有更坏。
 
+82. **`am force-stop` 自己的输入法包，系统会把输入法回落成搜狗**（2026-10-18 轮 AH 踩过两次）：
+    整轮读数其实在操作别人的键盘——`input text` 全成字面直输、候选永远 0 格、
+    我们的原生日志一行都没有，而退出码全是 0。**每次真机开工与每段动作前读 `mCurMethodId`**，
+    复位用 `ime set app.qingshan.ime/app.msime.android.MSIMEInputService`。
+83. **往设备私有目录写文件，三条"看着成功"的死路**（本轮实测）：
+    Git Bash 里 `adb push x /sdcard/x` 会把 `/sdcard` 换成 `C:/Program Files/Git/sdcard`
+    （报 `remote secure_mkdirs failed` 而脚本继续往下跑）；`run-as … cp /sdcard/x files/…` 静默失败；
+    `run-as … sh -c 'printf … > files/…'` 引号被吃，只剩 `version:1` 半截。**判据：写完必须 `cat` 回来核内容**，
+    别用写命令的退出码。
+84. **功能面板的开关卡片由 `ready = session != 0` 门禁**（`ImeFunctionPanel.java:125`、`:165`）：
+    会话一死，全角/中文标点/隐私模式这些卡片全变 `enabled=false` + state-desc「不可用」，
+    **连"关掉隐私模式"都点不动** ⇒ 隐私模式一旦与"会话死"绑在一起就是单向门。
+    面板还**记住上次那页**，且慢滑（≥450 ms）不翻页；组字没清时快捷栏里根本没有「更多」。
+85. **`logcat -d --pid=<pid>` 在这台 OPPO 上回 0 行**，而宿主那条 `catch (Exception error)` 本身不写日志
+    ⇒ 「进程没有日志」既可能是量具坏、也可能是异常根本不记，**不能拿来当"没出异常"的证据**（陷阱 48 同族）。
+86. **读设备上的 JSON 要先看一层结构再取值**：`android-settings.json` 是
+    `{"version":1,"settings":{…}}`，我按顶层 `json["platform.android.incognito"]` 取值读出 `None`，
+    当场把"开关落盘成功"记成"开关没生效"。**值不对时先怀疑取法，别先怀疑被测对象**。
+
 ## 方案 A 实现与真机验收（2026-10-14 03:06–03:25）
 
 用户拍板：**只做 A（退格即撤销），B/C/D/E 全不做。**
@@ -5605,6 +5624,121 @@ PROBE35 gate=candidate_index(gen 相等? false, idx 在页内? true) -> Passthro
 4. `pickLayout` 的 `pair[1]`：以后若有人把某一对的长度改掉，编译不会报错，只有运行时越界。
    要不要在那儿加一句 `assert`，等拍板。
 
+## 代次判定改成「表变了才涨」+ 隐私模式入口与一条 P0（2026-10-18 18:55–20:25，**host/java 零改动**）
+
+### 一、先把走 `transition` 的站点列全，再按「这次调用换没换候选内容」分类
+
+`grep -n "transition(" qingshan/engine/src/lib.rs` 实测 9 处：`focusRaw`、`characterRaw`、
+`commandRaw`、`selectRaw`、`pinCandidateRaw`、`removeCandidateRaw`、`selectAnyCandidateRaw`、
+`punctuationWithContextRaw`、`resetCacheRaw`。旧规则是「outcome 为 `Consumed`/`Commit` 就涨一代」，
+于是这些调用**一格内容都没换也照样涨**：
+
+| 调用 | 实际动作 | 换内容？ | 旧规则 |
+|:---|:---|:---:|:---|
+| `focusRaw` | 只写 `state.focused` | 否 | 空推进（每次会话启动一次，宿主 `MSIMEInputService.java:1709`）|
+| `commandRaw` 4/5/6/7/13/14 | 组字内移光标 | 否 | 空推进 |
+| `commandRaw` 100/101 | 翻页（改 `highlighted`）| 否 | 空推进 **而且翻过去的那一页被 `requery` 抹掉** |
+| `commandRaw` 102-105 | 移高亮 | 否 | 空推进 |
+| `commandRaw` 0（空组字下的 ⌫）| `note_backspace()` 退一笔学习 | **可能换** | **漏涨**（旧规则只保 `Consumed`/`Commit`）|
+
+触摸侧真正常走的除了 `focusRaw`，还有**点读音行移组字光标**：`movePreeditCaret`
+（`host/java/app/msime/android/core/MSIMEInputService.java:3167-3179`）按目标距离**连发 N 次命令 4/5**
+——点一次读音行就烧掉 N 格。这一条是本轮排查新认的，上一轮只当 `setPrivateSession` 一个站点在修。
+
+### 二、判据换成「重查出来的表逐格相同就不涨号」
+
+`run_transition`（`qingshan/engine/src/lib.rs:393` 起）现在做：动作前取指纹 → 动作 → `requery()` →
+**逐格文本相等 ⇒ 不涨、并保住游标；不等 ⇒ 涨一代**。指纹是 `table_texts()`
+（`qingshan/engine/src/lib.rs:353`，只取每条候选的 `text`）。
+
+为什么这一条把两侧风险同时关死，而旧的那句「偏向多涨」可以作废：
+- 漏涨的后果是「旧下标选中另一个字」，而 `selectRaw` 上屏的就是 `candidates[i].text`
+  ⇒ 文本逐格相等时那是不可能事件；
+- 多涨的后果是宿主手里**每一个**候选 id 被 `candidate_index` 判过期（待办 35 的真机机理，
+  `in gen=21 mine=28`）⇒ 现在只在内容真变时发生。
+
+顺带修掉两条：① `Passthrough` 也可能换表（空组字 ⌫ 的 `note_backspace`），旧规则不涨 ⇒ 现在涨；
+② **翻页本来就是坏的**——`requery()` 走 `refresh()` 会把 `highlighted` 归零
+（`qingshan/engine/src/session.rs:288-291`），命令 100/101 翻过去的那一页当场被抹掉。
+表没换时现在保住游标。**保住的位置必须在动作之后、重查之前取**：取早了等于把翻页按回去，
+我第一版就是写在动作之前，被自己新加的那条测试当场钉红（见下）。
+
+### 三、四条锁的 RED 读数和一次判别器实跑
+
+| 测试（`qingshan/engine/src/session.rs`）| 先红的读数 | 判别器 |
+|:---|:---|:---|
+| `a_state_only_action_keeps_the_generation`（`:1626`）| `left: 8 right: 7` ⇒ 只写 `focused` 也涨了一代 | 删掉"表相等就不涨"那一支 ⇒ 红（= 修前状态）|
+| `a_page_turn_keeps_its_page_and_the_generation`（`:1642`）| `翻过去要真的停在第 1 页 left: 0 right: 1` ⇒ **翻页被抹掉是实测出来的** | 把游标取值挪回动作之前 ⇒ 红（本轮真实犯过一次）|
+| `a_changed_table_advances_even_on_passthrough`（`:1662`）| `left: 7 right: 8` ⇒ 换了表却没涨 | 把涨号条件改回 `matches!(outcome, Consumed \| Commit(_))` ⇒ **实跑过，红** |
+| `reset_cache_transition_keeps_the_generation_and_carries_no_diagnostic`（`lib.rs`）| `left: 8 right: 7` ⇒ 重建出同一张表还涨一代 | 同上那一支 |
+
+**被反转的旧裁定**：`consumed_bumps_even_when_the_candidate_list_is_unchanged`
+（它的注释写着「将来若有人想用『长度 + 首项』的启发式省掉这次涨号，这条会红」）——
+本轮就是那条"将来"，按新证据删掉原断言、换成 `a_state_only_action_keeps_the_generation`。
+计数：115 → **117**（−1 +3）。
+
+### 四、真机读数（探针 `PROBE36` 打在 `run_transition` 出口，用完已摘并 `touch`）
+
+```
+gen=24->25 adv=true  table=500->500 editing="ni"     ← 打字：换表，涨（正当）
+gen=25->26 adv=true  table=500->64  editing="nih"
+gen=27->28 adv=true  table=54->45   editing="nihao"
+gen=28->29 adv=true  table=45->45   editing="nihao"    ← 「优先显示」：长度没变但顺序换了 ⇒ 该涨
+gen=23->23 adv=false table=0->0     editing=""        ← 空组字下连打 30 次 ⌫：一格不烧
+gen=10->10 adv=false table=0->0     editing=""        ← 切焦点那一次（focusRaw）
+```
+「优先显示」那一格同时是真机功能证据：候选条从 `候选 4：你好久` 变成 `候选 3：你好久`，
+离开输入框后 `user-choices.tsv` 多 `nihao\t你好久\t1`、`user.tsv` 多 `你好久\t1`。
+全程 `FATAL EXCEPTION` 0。
+
+### 五、隐私模式：入口找到了，但一开就把会话打死（新 P0 ⇒ 待办 36）
+
+**入口**（轮 AG 没找到的那一格）：键盘快捷栏「更多」→ 功能面板（`moreToolsCard`，卡片是真 `Button`
+且带 `content-desc`，uiautomator 读得到）→ **第二页**「隐私模式」。面板**记住上次那页**，
+翻页要快滑（450 ms 的慢滑不动）。
+
+实测序列（同一份最终 APK，健康态先起）：打 `nihao` → 候选 6 格 → 点「隐私模式」→
+`android-settings.json` 出现 `platform.android.incognito: true` → **候选 0 格**、卡片 `enabled=false`、
+再打没有任何组字。之后每次重启键盘都挂着横幅「共享运行时未就绪：仅直接输入」，
+而隐私卡片因为 `ready = s.session != 0`（`ImeFunctionPanel.java:125`）反过来点不动 ⇒
+**用户开了隐私模式既关不掉、也不能打字**。复位办法（本轮用的）：
+`run-as app.qingshan.ime rm files/bootstrap/state/android-settings.json`。
+
+**根因两段，都在我们这边**：
+
+1. `qingshan/engine/src/assemble.rs:52-56` 的 `HostResources` 只回
+   `{resources, state_root, preferences_directory}`，**没有 `preferences` 这一块**；
+   `Bootstrap.java:57` 把这个回显原样写成 `files/runtime-options.json`。设备上现读该文件
+   237 B、顶层键正是这三个。上游用的是 `msime_host_api::prepare_host_configuration`
+   （`crates/host-api/`，我们这边**没有对应物**——`grep -rn prepare_host projects/qingjian` 空），
+   它的文档带 `preferences`（`apps/desktop/src-tauri/src/lib.rs:1851` 等处常年读 `document["preferences"]`）。
+2. 我们轮 AG/AF 加的这两行用的是**硬取**：
+   `MSIMEInputService.java:1298` 与 `:7599`（`restartSessionForPrivacy`）都是
+   `options.getJSONObject("preferences").put("learning", false)`，
+   而**紧挨着的水杉自己那行**（`:1279`）用的是 `optJSONObject("preferences")`（允许缺）。
+   硬取在缺 `preferences` 的文档上抛 `JSONException` ⇒ `:1303`/`:7603` 的 catch `stop(false)` + 那句横幅。
+
+**只有 `learningSuppressed()` 为真才走到那行** ⇒ 症状被精确切成：普通框全好、
+**密码框 / 隐私模式 / 设置里关「记忆新词」这三类的会话一律起不来**。
+这也解释了为什么六轮的验证一直没撞上：所有真机验收都在普通框上打字。
+
+### 六、由此撤回上一轮的一条"正证"（未验证项，不当结论用）
+
+轮 AG 记的「关掉『记忆新词』后上屏『火箭』三档学习档一行不涨 ⇒ 开关 → 磁盘 → 引擎这条链是通的」
+——按上面这条根因，**那次"不涨"极可能是会话当场死了没写**，而不是 `MutedLearner` 挡住的。
+反方向那半（开回来上屏「皮蛋」三档各涨）仍然是真证据。⇒ 待办 33 的「关学习」半边**回到未验证**，
+只有单测（`a_private_session_writes_no_learning` 等四条）撑着。补法：修完待办 36 之后重跑那一段。
+
+### 七、闸门（全部本轮现测）
+
+`cargo test --release` **117 passed / 0 failed**、`cargo fmt -- --check` **27 hunk 全在 `lib.rs`**
+（`session.rs` 保持 0）、符号 **102/102 两 ABI 缺失/多余 0**、`.so` 磁盘 **4,523,320 / 4,783,048**、
+`clean assembleDebug` APK **50,224,545**、`verify_apk` 包内容/符号/清单全 True、
+`scan_bridges` 调用点 62 = **real 39 + 桩 23、杀会话维持 0**、`install -r` Success（未 `pm clear`）、
+真机 `FATAL EXCEPTION` **0**、设备复位（`rm` 掉 incognito、`svc power stayon false` 后
+`mStayOnWhilePluggedInSetting=0`、`mCurMethodId` 是我们、输入方案 全拼 26 键、
+`preferences.json` 仍 `"learning": true` / `revision 21`）。
+
 ## 待办
 
 
@@ -6193,7 +6327,10 @@ PROBE35 gate=candidate_index(gen 相等? false, idx 在页内? true) -> Passthro
     **（闭合 2026-10-18 13:05：用户拍板**整体关闭**。语义债（英文模式下 Core 的标点 flag 仍为 true、
     当前无消费方）已按裁定记进 README「已知失效项」，不修；重开条件不变。
     全文见「优先显示转真 + 待办 28 闭合 + 九键入口评估」第一节。**）**
-29. **候选长按三件的连坐出路**（2026-10-17 深夜立项，**本轮代码净改动 0**）：
+29. **候选长按三件的连坐出路**（2026-10-17 深夜立项，**本轮代码净改动 0**）
+   （**现值 2026-10-18 20:25 轮 AH**：**(b)「固定到首位」按用户裁定冻结为长期项**，本轮接受
+   「优先显示 = 记一次选择、一次只提一格」这个产品语义；(a) 已转真且本轮把它的代次门修直
+   ——表内容没变就不再作废宿主手里的 id，真机实测置顶一次位次确实从第 4 格升到第 3 格）：
     `pinCandidate` / `fixCandidatePosition` / `clearCandidatePosition` 现在是 B1 那套
     「原样 View + `handled:false`」，宿主据此在 `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:6044`
     弹「当前候选不支持此操作」⇒ 点亮 `hasDiagnostic` ⇒ 组字中候选条整条消失 4 秒（本轮真机实测，
@@ -6319,7 +6456,7 @@ PROBE35 gate=candidate_index(gen 相等? false, idx 在页内? true) -> Passthro
     点一次读一次：实测 `revision 18→19`、文档里出现 `"learning":false`；关掉后上屏「火箭」三档
     一行都不涨、开回来上屏「皮蛋」三档各涨一行 ⇒ **链路是通的，没有断链要修**。）
     还是写进了 `AndroidLocalSettings` 那条本地档）。触发重开的条件：想让用户关掉"记忆新词"真的生效。
-35. **`pin_candidate` 单测绿、真机不做事**（2026-10-18 隐私轮立，**优先级：高——待办 29(a) 的成果
+35. **（已关闭，但把结论让给待办 36）** `pin_candidate` 单测绿、真机不做事（2026-10-18 隐私轮立，**优先级：高——待办 29(a) 的成果
     目前是"看起来做了"**；**2026-10-18 18:20 已定位并修好：根因是代次那道门，
     而那 7 次空推进是我上一轮自己造的**）：两轮长按→「优先显示」都没在学习档留下任何一行（`nihao`/前缀候选「你好像」
     与 `shi`/同长度候选「事」各一次，`shi` 那一组该键历史为空，排除"被历史压住"这种解释）。
@@ -6329,3 +6466,23 @@ PROBE35 gate=candidate_index(gen 相等? false, idx 在页内? true) -> Passthro
     是 **1 基**还是页内序号，与 `candidate_index` 的口径对不对得上；
     ② 弹菜单那段时间 generation 有没有被推进（推进就得回 `Passthrough`，那正是"点了没反应"）。
     **便宜做法**：临时探针在三道门各打一行 `tracing::info!`，装机点一次看日志，跑完还原 + `touch`。
+
+36. **任何「不许学习」的输入框，会话都起不来（P0，优先级最高）**（2026-10-18 轮 AH 立，本轮代码改动 0 于这一项）：
+    `qingshan/engine/src/assemble.rs:52-56` 的 `prepareHost` 回显缺 `preferences` 块 ⇒
+    `files/runtime-options.json` 里没有那一块；我们加的 `MSIMEInputService.java:1298` 与 `:7599`
+    用硬取 `getJSONObject("preferences")`，只在 `learningSuppressed()` 为真时执行 ⇒ 抛 `JSONException`
+    ⇒ `:1303`/`:7603` catch 里 `stop(false)` + 横幅「共享运行时未就绪：仅直接输入」。
+    **后果**：密码框、隐私模式、设置里关「记忆新词」三种情况下键盘退化成纯直输（无候选、无长按菜单、
+    功能面板开关全部「不可用」），而且隐私模式开下去之后**关不回来**。
+    **修法两条，甲为主**：甲＝`prepare_host` 把出厂默认偏好（我们已有 `preferences::load_document()`）
+    一起回显进那份文档，补的是契约缺口，`applyEditorPreferences`（`:1280`）也顺带拿到该拿的东西；
+    乙＝把那两行换成 `optJSONObject` + 缺时新建，1 行级 Java 破例（§5a 第 10 条），且**能立刻救现网设备**
+    （甲需要删掉 `files/runtime-options.json` 让 Bootstrap 重新准备才生效）。
+    **重开条件**：本轮已定位到行，等拍板选甲/乙/甲+乙；修完必须补三格真机（密码框、隐私模式、关「记忆新词」）
+    + 撤回答题（见本节第六小条）。
+37. **键盘侧「输入方案选择器」里仍有「全拼 9 键」卡片**（2026-10-18 轮 AH 顺带实测，代码改动 0）：
+    待办 30 方案 A 挡掉的是**设置页那一行**（`KeyboardOptionsPage`），但快捷栏「输入方案」弹出来的
+    卡片列表（实测读到「输入方案卡片 全拼 9 键」等 8 张）没挡 ⇒ 用户仍然能把方案选成九键，
+    而九键面板在本项目不可达（布局从 View 算，恒报 26 键）。**同一族"入口没关干净"，别一个个当独立 bug**，
+    但这条要先确认：用户选九键卡片之后实际发生什么（本轮没测，选卡片那一步我止步在只读观察）。
+    **重开条件**：与待办 30 一起判——若决定彻底隐藏，这里要第二处 Java 破例；若决定真做九键，则是待办 30 方案 B。

@@ -341,17 +341,47 @@ pub extern "system" fn Java_app_msime_android_NativeClient_updatePreferencesRaw(
     }
 }
 
-/// 一次「动作 → 按结果涨号 → 重查 → 出 Transition」的完整编排。
+/// 宿主手里那张表的内容指纹：**逐格的候选文本**。
 ///
-/// **顺序是这一处的核心修复。** 原先 `advance()` 无条件跑在动作之前，而动作内部的代次
-/// 校验（`candidate_index` / `candidate_index_in_table`）比的是宿主传来的 `generation`
-/// 与 `self.generation` —— 先 +1 就永远不等，于是 `selectRaw` / `removeCandidateRaw` /
-/// `selectAnyCandidateRaw` 三个带 id 的入口恒回 `handled:false`，宿主点候选从来不上屏。
-/// 阶段一验收是用空格（`commandRaw` 命令 1，不带 id）提交「你好」的，所以没暴露。
+/// 判据只取文本，不取 `kind` / `syllables` / 译词——`candidates[i].text` 正是点中第 i 格
+/// 会上屏的字（`selectRaw` 就是 `engine.commit(&state.candidates[index])`），文本一格没动
+/// 就不可能出现「旧下标选中另一个词」；其余字段只影响这一格怎么画，而画的是我们这一次
+/// 刚发过去的新 View。
 ///
-/// 涨号谓词刻意偏向「多涨」：漏涨会让宿主拿旧表的下标选中另一个候选（上错字，
-/// 数据正确性），多涨只会 `handled:false` 加候选条滚回最左（体验）。所以
-/// `Passthrough` / `NotSupported` 不涨，`Consumed` / `Commit` 涨。
+/// 每次编排分配「表长 × 一个短字符串」两份（前后各一次）。这不是本编排的开销大头：
+/// `requery()` 本身重建成品表，每条候选都带 `Vec<String>` 音节与 `Option<Translation>`。
+fn table_texts(state: &Session) -> Vec<String> {
+    state
+        .candidates
+        .iter()
+        .map(|candidate| candidate.text.clone())
+        .collect()
+}
+
+/// 一次「动作 → 内容变了才涨号 → 重查 → 出 Transition」的完整编排。
+///
+/// **顺序是这一处的核心修复（两代）。** 第一代：原先 `advance()` 无条件跑在动作**之前**，
+/// 而动作内部的代次校验（`candidate_index` / `candidate_index_in_table`）比的是宿主传来的
+/// `generation` 与 `self.generation` —— 先 +1 就永远不等，于是 `selectRaw` /
+/// `removeCandidateRaw` / `selectAnyCandidateRaw` 三个带 id 的入口恒回 `handled:false`，
+/// 宿主点候选从来不上屏。阶段一验收是用空格（`commandRaw` 命令 1，不带 id）提交「你好」的，
+/// 所以没暴露。
+///
+/// 第二代（2026-10-18 轮 AH）：涨号条件从「outcome 是 `Consumed`/`Commit`」换成
+/// **「重查出来的表逐格文本与动作前不同」**。理由是那条旧规则覆盖不到的三类调用
+/// 只回传 UI 状态、一格内容都没换，却照样涨号：`focusRaw` 写 `focused`、
+/// 点读音行移组字光标（`MSIMEInputService.java:3167-3179` 连发命令 4/5）、
+/// 候选条翻页（命令 100/101）。每涨一次，宿主手里**每一个**候选 id 都被
+/// `candidate_index` 判过期（`session.rs:322-328`），「优先显示 / 删除词条 / 点选」
+/// 一起失效——待办 35 的真机红（`in gen=21 mine=28`）就是这一族。
+///
+/// 旧规则留着的那条不对称担心的是「漏涨 ⇒ 旧下标选中另一个字，上错字」，而新判据把它
+/// 反着关死了：文本逐格相等时那是不可能事件；文本一变就涨，**哪怕动作回的是
+/// `Passthrough`**（空组字下的 ⌫：`Engine::note_backspace()` 退掉上一笔学习，
+/// 表会换，而那一支不涨是旧规则的漏涨）。
+///
+/// 表没换时顺带保住 `highlighted`：`requery()` 里的 `refresh()` 把游标归零
+/// （`session.rs:288-291`），原先无条件重查会把命令 100/101 刚翻过去的那一页抹掉。
 ///
 /// `advance()` 与 `requery()` 成对出现在这里而不是散进 `keys.rs`，对齐上游
 /// `runtime.rs:321-324` 的 `advance(); refresh();`。锁只在这一个 `with_session` 里持有，
@@ -365,15 +395,19 @@ fn run_transition(
     id: u64,
     action: impl FnOnce(&mut Session) -> CommandOutcome,
 ) -> view::Transition {
+    let before = table_texts(state);
     let outcome = action(state);
     let committed = matches!(outcome, CommandOutcome::Commit(_));
-    if matches!(
-        outcome,
-        CommandOutcome::Consumed | CommandOutcome::Commit(_)
-    ) {
+    // 游标要在**动作之后、重查之前**取：命令 100-105 正是靠改 `highlighted` 来表达的，
+    // 取早了会把刚翻过去的那一页又按回去（这条是测试逼出来的，见
+    // `session::tests::a_page_turn_keeps_its_page_and_the_generation`）。
+    let cursor = state.highlighted;
+    state.requery();
+    if table_texts(state) == before {
+        state.highlighted = cursor;
+    } else {
         let _ = state.advance();
     }
-    state.requery();
     // 学习数据落盘挂在提交上，但走 60 秒节流（`session.rs` 的 `LEARNING_FLUSH_INTERVAL`），
     // 且排在 `requery()` 之后——先把用户要的候选算出来，再碰磁盘。
     if committed {
@@ -925,9 +959,13 @@ mod tests {
         );
     }
 
-    /// `resetCache` 走完编排后的形状：代次要涨、表要按当前组字重建、`handled` 为真，
-    /// 而且**不带 diagnostic**——点亮 `hasDiagnostic` 会让候选条那四行整排消失
+    /// `resetCache` 走完编排后的形状：`handled` 为真、表按当前组字重建，而且**不带
+    /// diagnostic**——点亮 `hasDiagnostic` 会让候选条那四行整排消失
     /// （连坐面见 `third-party/PIN.md`「戊-A」那几节），一次清缓存不该换来这个。
+    ///
+    /// 代次**不涨**（2026-10-18 轮 AH 改的判据，原先这里断言"要涨一代"）：清掉的缓存
+    /// 按同一份组字重建出来是逐格相同的一张表，宿主手里每个 id 仍指向同一个词。
+    /// 涨号的唯一正当理由是「某个下标对应的词变了」。
     ///
     /// 判别器（实跑）：把 `keys::reset_cache` 的 `CommandOutcome::Consumed` 换成
     /// `Passthrough` ⇒ `handled` 这条当场红，后面两条**不会跑到**（panic 直接终止这个测试），
@@ -935,7 +973,7 @@ mod tests {
     /// `run_transition` 无条件 `requery()`，清没清都会被重建，那条锁在
     /// `keys::tests::reset_cache_drops_the_whole_candidate_table` 里。
     #[test]
-    fn reset_cache_transition_advances_and_carries_no_diagnostic() {
+    fn reset_cache_transition_keeps_the_generation_and_carries_no_diagnostic() {
         let engine = qingjian_core::Engine::new(
             qingjian_dictionary::Dictionary::parse("你好\tni hao\t9000\n").expect("夹具词库"),
         );
@@ -956,9 +994,8 @@ mod tests {
             "不该顺手点亮 hasDiagnostic"
         );
         assert_eq!(
-            state.generation,
-            before + 1,
-            "代次必须推进，用户手里的旧候选号要作废"
+            state.generation, before,
+            "重建出来逐格相同的表不涨号，用户手里的旧候选号仍然有效"
         );
         assert!(
             !state.candidates.is_empty(),

@@ -1608,22 +1608,76 @@ mod tests {
         assert_eq!(session.generation, seen + 1, "处理过才涨代次，且只涨一代");
     }
 
-    /// 「多涨可接受」写进测试：动作没碰引擎但回 `Consumed`（`focusRaw` 就是这种），
-    /// 照样涨号。将来若有人想用「长度 + 首项」的启发式省掉这次涨号，这条会红。
+    /// 轮 AH 把上一轮那条「多涨是安全侧」的裁定**反转**，这是它的回归锁。
+    ///
+    /// 原先只要动作回 `Consumed` 就涨一代，于是 `focusRaw`（写 `focused`）、点读音行
+    /// 移组字光标（`MSIMEInputService.java:3167-3179` 连发命令 4/5）、候选条翻页
+    /// （命令 100/101）这三类**没碰候选内容**的调用也各涨一格。而代次一变，
+    /// `candidate_index` 的等值校验就把宿主手里**每一个**候选 id 判成过期
+    /// （`session.rs:322-328`）——待办 35 的真机红 `in gen=21 mine=28` 正是这一族。
+    ///
+    /// 新判据「逐格文本相等 ⇒ 不涨」把两侧同时关死：漏涨的后果是旧下标选中另一个字，
+    /// 而文本一模一样时那是不可能事件；多涨的后果是所有按 id 的入口当场失效。
+    ///
+    /// **判别器**（实跑）：删掉 `run_transition` 里"文本相等就不涨"那一支 ⇒
+    /// 第 2、3 条当场红；把谓词换成"看 outcome" ⇒ 下面那条
+    /// `a_changed_table_advances_even_on_passthrough` 红。
     #[test]
-    fn consumed_bumps_even_when_the_candidate_list_is_unchanged() {
+    fn a_state_only_action_keeps_the_generation() {
         let mut session = nihao_session();
         let before = session.generation;
-        let list_len = session.candidates.len();
-        let body =
-            crate::run_transition(&mut session, 7, |_| crate::keys::CommandOutcome::Consumed);
-        assert!(body.handled);
+        let body = crate::run_transition(&mut session, 7, |state| {
+            state.focused = true;
+            crate::keys::CommandOutcome::Consumed
+        });
+        assert!(body.handled, "动作照旧算处理过，不涨代次不等于没处理");
+        assert_eq!(session.generation, before, "只写 UI 状态不涨代次");
+        assert_eq!(body.view.generation, before, "View 里的代次与会话同源");
+    }
+
+    /// 命令 100/101 的两处后果：代次不该涨（内容没变），而且翻过去的那一页**必须还在**。
+    /// 后半条是新抓出来的：`requery()` 里的 `refresh()` 把游标归零
+    /// （`session.rs:288-291`），原先无条件重查会把刚翻过去的那一页抹掉。
+    #[test]
+    fn a_page_turn_keeps_its_page_and_the_generation() {
+        let mut session = nihao_session();
+        assert!(session.page_count() > 1, "夹具：`nihao` 应有第二页");
+        let before = session.generation;
+        let body = crate::run_transition(&mut session, 7, |state| {
+            crate::keys::apply_command(state, 100)
+        });
+        assert!(body.handled, "翻页是引擎收下的一次操作");
+        assert_eq!(body.view.page, 1, "翻过去要真的停在第 1 页");
+        assert_eq!(session.generation, before, "候选内容没变，id 不该集体过期");
+    }
+
+    /// 反方向：内容真的变了就必须涨，**哪怕这一次回的是 `Passthrough`**。
+    /// 真实入口是空组字下的 ⌫（命令 0）：`Engine::note_backspace()` 退掉上一笔学习，
+    /// 下一张表可能不同，而那一支回 Passthrough——原先「只有 Consumed/Commit 才涨」
+    /// 在它是**漏涨**（旧注释里"偏向多涨"担心的正是这件事）。
+    ///
+    /// 判别器：把 `run_transition` 的涨号条件改回 `matches!(outcome, Consumed | Commit(_))`
+    /// ⇒ 这一条红（动作回 Passthrough 却确实换了表）。
+    #[test]
+    fn a_changed_table_advances_even_on_passthrough() {
+        let mut session = nihao_session();
+        let before = session.generation;
+        let previous = crate::table_texts(&session);
+        let body = crate::run_transition(&mut session, 7, |state| {
+            state.engine.push('m');
+            crate::keys::CommandOutcome::Passthrough
+        });
+        assert_ne!(
+            crate::table_texts(&session),
+            previous,
+            "夹具：这一改必须真的换了表，否则下面那条代次断言是空转"
+        );
+        assert!(!body.handled, "Passthrough 仍算没处理，与涨不涨无关");
         assert_eq!(
             session.generation,
             before + 1,
-            "Consumed 就涨号，多涨是安全侧"
+            "表变了就得让宿主手里的旧 id 作废"
         );
-        assert_eq!(session.candidates.len(), list_len, "而候选表本身没变");
     }
 
     /// 待办 28：宿主的「中文标点」开关要真的落进引擎。
