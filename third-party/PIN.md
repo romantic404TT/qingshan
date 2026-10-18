@@ -705,6 +705,27 @@ AGP 9.x 要求 Gradle 9.6+），升 AGP 会直接破坏构建。
     **第一个 Ctrl 的 DOWN 本身就落进那条交回分支**（`:3966-3972` 里先 `command(2)`）⇒ 组字被结束。
     后果：测硬件和弦时"和弦前正在组字"这个前置会被注入自己破坏，
     **不能同时断言"组字还在"**；要判和弦有没有生效，看的是"之后还能不能重新组字出候选"。
+72. **写"学习键"必须去读查询侧那一行，不能按"看起来自然的字符串"拼**（2026-10-18 12:30 实测，
+    代价是第一版实现是错的、四条测试里三条抓不到）：
+    「优先显示」第一版把 `record_choice` 的键写成"候选自己的音节表拼起来"，
+    对 `nihao`→`你好` 这种**精确候选**完全正确，测试也绿；
+    但查询侧取的是**作用域的前缀**（`crates/qingjian-core/src/engine/query/phonetic.rs:146` 与 `:155`），
+    而 `nihao` 下会出「你好像」这类**读音比输入长**的前缀候选 ⇒ 按音节拼会记成 `nihaoxiang`，
+    查询永远取不到，症状是"点了没效果"，**不崩、不报错、不红**。
+    **规则**：任何"写进某个表/缓存/计数器"的代码，动手前先把**读它的那一行**找出来抄进注释；
+    两边字符串形状一致才算对，"看起来合理"不算。
+    配套要有**一条专门打边界形状的用例**（本轮是
+    `promoting_a_prefix_candidate_records_the_scope_prefix`，实测它是唯一会红的那条）。
+73. **OPPO 的「口袋防误触模式」会把所有注入按键静默吞掉**（2026-10-18 12:35 撞到，
+    代价是一整轮真机验证没做成 + 十几步白跑）：顶部距离感应被挡时系统盖一层全屏提示，
+    症状极像"我们的改动没生效"——`mCurrentFocus` 恒为 `NotificationShade`、
+    `dumpsys input_method` 里 `mInputShown=false`、`input tap`/`keyevent` 全部无反应而**退出码 0**、
+    `uiautomator dump` 的树里连我们应用的节点都没有。
+    `cmd statusbar collapse`、`keyevent 4/3/26/224`、按屏上圆圈都可能不生效（它会反复重新进入）。
+    **规则（开工闸门）**：真机一轮开始前一次读回三项 ——
+    `dumpsys power` 的 `mWakefulness`（要 `Awake`）、截图看有没有"已入口袋防误触模式"、
+    `dumpsys window` 的 `mCurrentFocus`（要是预期包）。
+    任一项不对就**停下报告**，不要开始点；靠"点了没反应"往回倒推会烧掉大量轮次。
 
 ## 方案 A 实现与真机验收（2026-10-14 03:06–03:25）
 
@@ -5152,6 +5173,139 @@ NOTICE §5a 已加第 8 条（宿主 Java 树第 4 处破例），README 第 4 �
 5. **撤回**：本轮我自己写的测试注释里"三条断言一起红"（第三节第三条）——panic 会终止测试，
    实际只有第一条跑到。
 
+## 优先显示转真 + 待办 28 闭合 + 九键入口评估（2026-10-18 12:07–13:05，**host/java 零改动**）
+
+用户拍板：待办 28 整体关闭；待办 29 只做 (a)「优先显示」，走 `Learner`；待办 30 只评估；
+顺带补测待办 32。**本轮有一整块没做完：真机验证与 `#+=` 补测被设备物理状态挡住**，见第六节。
+
+### 一、待办 28 闭合（语义债记进已知，不修）
+
+`chinesePunctuation`（宿主）与 `full_width_punctuation`（Core）**不等价**：前者同时管键面字形与上屏标点，
+后者只管 `punctuate()` 这一条（唯一消费点 `crates/qingjian-core/src/engine/composing.rs:20`）；
+我们接的正是那一条 ⇒ **接线正确，无需修**。
+**语义债（记进 README 已知失效项，不引发 bug）**：宿主递 native 的是**裸** `chinesePunctuation`
+（`host/java/app/msime/android/core/MSIMEInputService.java:4461-4466`），
+而它自己用的是与英文模式/方案/local_mode 相与后的**有效值**（`sendsChinesePunctuation()`，同文件 `:3586`）
+⇒ **英文模式下 Core 的标点 flag 仍为 true**。当前无消费方（我们 `keys::punctuation` 在英文模式
+自己 `Passthrough`，有单测锁着）。**重开条件**：任何代码开始读 Core 的标点 flag 判模式。
+
+### 二、「优先显示」= `pinCandidateRaw`，契约与语义定调
+
+菜单项到导出的链路（逐个回源，不是猜的）：
+`candidate/CandidateManagementAction.java:5` 的 `PROMOTE("优先显示", "已优先显示", false)`
+→ `MSIMEInputService.java:6036` `case PROMOTE -> NativeClient.pinCandidate(session, generation, index)`
+→ 导出 `pinCandidateRaw`。
+
+**这一件与上一轮那三件不同：它的调用点读 `handled`。**
+`editCandidate` 在 `:6042-6045`：`if (!apply(result)) showDiagnostic("当前候选不支持此操作")
+else announce(action.announcement())` ⇒ 回 false 就是那句"不支持"（这正是待办 29 立项时的症状），
+回 true 才播报「已优先显示」。**所以必须真做点什么才许回 true** —— 不撒谎这条从这里开始约束实现。
+
+**语义定调（用户裁定，写进代码注释）**：用户主动点「优先显示」= 用户主动**又多选了一次**这个候选。
+⇒ 记的就是上屏时那两条学习记录，不新增任何"系统替他置顶"的假状态。
+
+### 三、实现：为什么必须记两条，以及键为什么不能按音节拼
+
+**（1）只记词频翻不了位。** 排序键 `crates/qingjian-core/src/ranking/scored.rs:38` 的 `SortKey`
+第 5 位是 `Reverse(choice)`（同一输入串下的选择次数），**排在第 6 位（含 `weight_bonus` 的分数）之前**；
+而 `weight_bonus(count) = 0.5 × (1 + ln min(count,20))`（`crates/qingjian-core/src/ranking/mod.rs:36`）
+⇒ 记一次 `record` 只加 **+0.3466** 分，紧对手身上根本翻不过来。
+上屏那条路也正是两条一起调（`crates/qingjian-core/src/engine/commit/mod.rs:112-114`）。
+⇒ 实现 = `learner.record(candidate)` **＋** `learner.record_choice(key, text)`。
+
+**（2）键必须按作用域切，不能把候选的音节表拼起来。** 查询侧是
+`crates/qingjian-core/src/engine/query/phonetic.rs:146` 取 `choice_key(scope, scope.len())`、
+`:155` 再按**该候选覆盖的那段**切前缀去查 `choice_weight`。
+真机上 `nihao` 会出「你好像」这类**读音比输入长**的前缀候选（它这次只覆盖 `nihao`），
+按音节拼会得到 `nihaoxiang` —— 记到一个查询永远取不到的键上，
+症状就是"点了优先显示，下次还是没置顶"。**这条我是先写错、再被自己的测试抓出来的**：
+新加的 `promoting_a_prefix_candidate_records_the_scope_prefix` 把键换回"音节表直接拼"之后
+**只有它一条红**（`left: 0 / right: 1`），另外三条全绿 ⇒ 没有这条测试，这个 bug 会静悄悄上线。
+现在的切法：`raw = engine.composition().scope()`（公开 API，`crates/qingjian-core/src/composition.rs:35`），
+`letters = 音节字母数之和`，`key = raw 的前 min(letters, raw.len()) 个字符去掉隔音符号`。
+
+**（3）两处刻意不做**：① 非 `CandidateKind::Chinese` 的候选（整句/英文/emoji）**直接交回宿主**——
+Core 上屏它们时本来就不调 `record`（`crates/qingjian-core/src/engine/commit/mod.rs:110-130`），
+我们也不假装置顶；② `identity.learning_allowed == false`（私密框 / 用户关了「记忆新词」）
+⇒ 不写学习数据、回 `Passthrough`（宿主那句"不支持此操作"在此处是实话）。
+
+**「固定到首位」/「取消固定」本轮没动**，仍是 `no_op` 止血，代码里注明了原因与待办 29 引用
+（Core 没有可存的"位"，要自建固定表 + 先读上游固定语义）。
+
+### 四、闸门与数字（本轮实测）
+
+`cargo test --release` **111 passed / 0 failed**（110 → 111，新增前缀候选那条）；
+`cargo fmt -- --check` **26 hunk、非 `lib.rs` 0**（与上一轮同数，本轮新代码没有新增 hunk）；
+`.so` arm64 4,512,264 → **4,515,480（+3,216）**、x86_64 4,770,144 → **4,773,280（+3,136）**；
+APK clean 50,195,257 → **50,198,393（+3,136）**；`verify_apk` 包内容/符号/清单全 True；
+符号 **102/102 两 ABI**；`REAL` **27 / 桩 75 不变**（`pinCandidateRaw` 从 B1 起就在 `REAL` 里，
+本轮只是把身体从止血换成真实现）；`scan_bridges` 62 = real 38 + 桩 24，**杀会话维持 0**。
+`install -r` 成功、未 `pm clear`。
+
+**判别器三条都实跑过**：删 `record_choice` ⇒ `choice_weight` 那条红；删 `record` ⇒ `weight` 那条红；
+键换回音节拼 ⇒ 前缀那条红（且只有它红）。
+
+### 五、待办 30 评估：九键入口的三个方案（本轮不实现）
+
+**先纠正本轮任务书里的一处措辞**：任务书写"我们恒返回 0（不支持）"，实际是
+`View.nine_key` 是 **bool**、我们恒 `false`（`qingshan/engine/src/view.rs:184`），
+`touch_keyboard_layout` 恒 `TwentySixKey`（`:189`）。结论不变，但"返回 0"这个说法会误导下一个人。
+
+**上游本来就留了降级出口**（这是本轮最有用的发现）：
+`host/java/app/msime/android/home/KeyboardOptionsPage.java:91-97` ——
+`pairOffered` 为假时，那一行自动变成**只读说明**（显示"26 键" + 备注"本版本只有一种键盘"、
+点击动作传 `null`）。**但这条路对我们不通**：
+`keyboard/KeyboardScheme.java:12` 里 `QUANPIN_NINE_KEY("nine_key", "quanpin", …)` 的
+**engineScheme 与 26 键是同一个 `"quanpin"`**，而 `core/AppEdition.java` 的
+`offers(engineScheme)` 只看 engine 方案 ⇒ 只要本版本有全拼，九键就被算成"提供"。
+**没有可以只改配置就关掉的开关。**
+
+| 方案 | 做法 | 代价 | 风险 |
+|---|---|---|---|
+| **A**（建议） | `KeyboardOptionsPage.java` 的 `layoutPair` 对 `QUANPIN/QUANPIN_NINE_KEY` 这一支返回 `null`（**1 行 Java**），行自动降级成只读说明 | 1 行 + NOTICE §5a 加第 9 条（**宿主 Java 树下一处破例**） | 低。行为就是上游"本版本只有一种键盘"的既有语义，不是我们发明的话术 |
+| **B** | 让 View 报 `nine_key: true` + 填 `nine_key_spellings` 等 6 个字段，真做九键 | 要先在**我们这边自建 T9 输入**（Core 全域 `nine_key` 0 命中）：数字→拼音候选、拼音栏、单字/笔顺筛选 | **会打破本轮的杀会话归零**：`chooseNineKeySpellingRaw` 仍是桩，而它的调用点 `core/ImeLayoutRows.java:1196` 的 catch 体是 `s.fail()` ⇒ 用户点一个拼音项就死会话。（`setNineKeyModeRaw` 全 host **0 调用者**，是死导出；`setNineKeyFilterRaw` 本轮已止血，不再杀会话） |
+| **C** | 维持现状 | 0 | 用户能选九键、键盘照旧 26 键、**无任何提示**（静默不答应） |
+
+⇒ 建议 **A**，等拍板。B 不是一轮的事，且必须先补掉 `chooseNineKeySpelling` 那个新杀会话面。
+
+### 六、真机验证：**本轮没做完**（设备物理状态）
+
+装机成功（`install -r` Success），但**验证一条都没跑成**：设备反复进入
+**OPPO「口袋防误触模式」**（顶部距离感应被挡 → 所有注入按键被系统吞掉、
+`mCurrentFocus` 恒为 `NotificationShade`、`dumpsys input_method` 里 `mInputShown=false`）。
+试过 `keyevent 224/26/4/3`、`cmd statusbar collapse`、按屏上圆圈，中间退出过一次看到锁屏
+（`上滑解锁`）但下一次唤醒又回到该模式 ⇒ **需要人把手机翻过来/擦一下顶部感应区**。
+因此以下四项**全部标未验证，不当作已通过**：
+① 「优先显示」真机置顶（长按候选 → 点它 → 重打 `nihao` 看是否第一格）；
+② 三条路径复验（启动 / 切输入法 / 密码框）——本轮改的是 `editCandidate` 那条 `catch → fail()` 的路，
+**按击穿判定第五类这是硬性项**；③ 金路径不退；④ 待办 32 的 `#+=` 页字形。
+**下一步第一件事就是补这四格**，在那之前本轮代码不应被说成"真机验收通过"。
+
+### 七、顺带发现的一条既有隐私缺口（**不是本轮引入，本轮没修**）
+
+核 `pin_candidate` 要不要看 `learning_allowed` 时查出来的：
+**我们的引擎从来没把"私密框 / 关了记忆新词"告诉 Core** ——
+`create_engine`（`qingshan/engine/src/assemble.rs`）只装 `FrequencyLearner`，
+**从不调** `Engine::set_learning`（`crates/qingjian-core/src/engine/setup.rs:83`）
+或 `Engine::set_private`（`crates/qingjian-core/src/engine/privacy.rs:11`）；
+`updatePreferences` 那边只把 `identity.learning_allowed` 置 false（`qingshan/engine/src/lib.rs:299`），
+而那个标志目前只管甲-2 的挂起/换回。⇒ **在密码框里上屏的词照样写进 `user.tsv`**。
+本轮的新写入路径**自己挡了**（第三节 (3)②），但**主路径（上屏）没挡**。
+立为待办 33，优先级我倾向**高**（这是隐私语义，不是体验）。**本轮没动它**：
+修它要决定"关掉学习时已学的词还参不参与排序"（Core 的注释说照常参与），
+并且要真机验密码框那条路，属另一轮。
+
+### 八、本轮自抓
+
+1. **先写错、再被自己的测试抓出来**：`choice` 的键第一版是"音节表直接拼"，四条测试里三条全绿，
+   只有新加的前缀候选那条红 ⇒ 记进陷阱 72（**"看起来自然的键"不等于查询侧取的键，
+   写学习键必须去读查询侧那一行**）。
+2. **测试注释不能超售**：上一轮刚为"三条断言一起红"道过歉，本轮同一类注释我又写了
+   "两条一起红"——实测 panic 会终止测试，只有第一条红。已改成实测样子。
+3. **设备状态要在动手前查**：本轮第一次 `dumpsys power` 就是 `Dozing`，
+   我直接开始注入，后面所有"点了没反应"都可能是这个原因，白跑了十几步。
+   应先把 `mWakefulness` + 口袋模式 + `mCurrentFocus` 三项当**开工闸门**。
+
 ## 待办
 
 
@@ -5737,6 +5891,9 @@ NOTICE §5a 已加第 8 条（宿主 Java 树第 4 处破例），README 第 4 �
     **重开条件**：任何代码开始读 Core 的标点 flag 判模式。
     另外上面那句"符号层…实测半角"本轮已撤回（改成"随开关给全角/半角"）。
     ⇒ **本条现在可按"已核完、无需修"整体闭合，闭合口径等用户拍。**）**
+    **（闭合 2026-10-18 13:05：用户拍板**整体关闭**。语义债（英文模式下 Core 的标点 flag 仍为 true、
+    当前无消费方）已按裁定记进 README「已知失效项」，不修；重开条件不变。
+    全文见「优先显示转真 + 待办 28 闭合 + 九键入口评估」第一节。**）**
 29. **候选长按三件的连坐出路**（2026-10-17 深夜立项，**本轮代码净改动 0**）：
     `pinCandidate` / `fixCandidatePosition` / `clearCandidatePosition` 现在是 B1 那套
     「原样 View + `handled:false`」，宿主据此在 `qingshan/host/java/app/msime/android/core/MSIMEInputService.java:6044`
@@ -5768,6 +5925,12 @@ NOTICE §5a 已加第 8 条（宿主 Java 树第 4 处破例），README 第 4 �
     （实测按 `?` `;` 上屏半角，而 Core 表里 `'?' => "？"`）⇒ 用户感知的"标点不对"
     可能来自符号层，与待办 28 的引擎路径是两套，**别把它们并成一个 bug 修**。
     本条状态不变：仍打开、等 (a)/(b)/(c) 拍板，本轮没动 `pin` / `fix` / `clear` 三件。**）**
+    **（现值 2026-10-18 13:05：**(a)「优先显示」已落地**——用户拍板"点它等同于用户又多选了一次这个候选"，
+    所以记的是上屏时那两条学习记录（`Learner::record` + `record_choice`），不新增假状态；
+    实现与"为什么必须记两条"见「优先显示转真」第二、三节。
+    **(b)「固定到首位」与 (c)「取消固定」仍停在 `no_op` 止血**，等下一轮拍：
+    要自建固定表 + 先读上游固定语义（持久化吗、按词还是按读音、与调频怎么合）。
+    所以本条**部分推进、仍打开**；(c) 那条"诚实提示 + 1 秒自愈"的现状对 `fix`/`clear` 两件继续有效。**）**
     **（现值 2026-10-18 05:05：上面那段里"实测按 `?` `;` 上屏半角"**已撤回**——本轮同一台机、
     同一版本、开关实测开着（「中文标点」格绿像素 2808）重测，123 页的字形与上屏都是**全角**
     `：；？！`。"不经 native、不杀会话"那半仍然成立。详见「剩余 3 个杀会话站点清零」第五节。**）**
@@ -5781,6 +5944,14 @@ NOTICE §5a 已加第 8 条（宿主 Java 树第 4 处破例），README 第 4 �
     字段填真值；② Core 要有 T9 输入（全域 `nine_key` 0 命中）；③ 单字/笔顺筛选还要笔顺数据
     （`stroke` 0 命中；`Candidate.aux_code` 是不是那件事**没核**）。
     **优先级：中低。** 触发重开的条件：用户报告"选了九键还是 26 键"，或产品要上 T9。
+    **（评估 2026-10-18 13:05：用户拍板**本轮只评估、不实现**，三方案代价已列全，见
+    「优先显示转真」第五节的表。要点两条：① **上游本来就留了"本版本只有一种键盘"的只读降级出口**
+    （`host/java/app/msime/android/home/KeyboardOptionsPage.java:91-97` 的 `pairOffered`），
+    但它按 **engine 方案**判，而 `keyboard/KeyboardScheme.java:12` 的九键与 26 键共用
+    `"quanpin"` ⇒ **没有可以只改配置就关掉的开关**，方案 A 必须动那 1 行 Java（第 9 处 §5a 破例）；
+    ② 方案 B 会**打破本轮刚拿到的杀会话归零**——`chooseNineKeySpellingRaw` 仍是桩，
+    调用点 `core/ImeLayoutRows.java:1196` 的 catch 体是 `s.fail()`。
+    建议 A，**等拍板**。另纠正任务书措辞：不是"恒返回 0"，是 `View.nine_key` 这个 **bool** 恒为 `false`。**）**
 31. **`glide` 滑行解码要不要做**（2026-10-18 立项）：判定乙（Core 无能力但不用改 Core，
     自建「点列 → 键序列 → 候选」≥100 行）。本轮只做了止血，**真机连"有没有触发"都没证成**
     （注入的 swipe 被编辑器选中文本手势吃掉，见陷阱 69/第四节）。
@@ -5789,3 +5960,16 @@ NOTICE §5a 已加第 8 条（宿主 Java 树第 4 处破例），README 第 4 �
 32. **符号层还差两格**（2026-10-18）：① `#+=` 第二符号页的字形集合没测（本轮解释了 123 页随
     `chinesePunctuation` 变全角/半角，但上一轮那两次"半角"读数最可能就落在这一页）；
     ② 空组句在**字母层**按逗号那一格没单独拍（单测覆盖）。成本各几分钟。
+    **（现值 2026-10-18 13:05：本轮想补，但设备卡在「口袋防误触模式」，两格都没测成，
+    仍是打开状态；开工闸门见陷阱 73。**）**
+33. **私密框与「记忆新词」开关从来没传给 Core**（2026-10-18 立项，**本轮代码净改动 0 于这一项**）：
+    `create_engine` 只装 `FrequencyLearner`，从不调 `Engine::set_learning`
+    （`crates/qingjian-core/src/engine/setup.rs:83`）或 `Engine::set_private`
+    （`crates/qingjian-core/src/engine/privacy.rs:11`）；`updatePreferences` 只把
+    `identity.learning_allowed` 置 false（`qingshan/engine/src/lib.rs:299`），
+    而那个标志目前只管甲-2 的挂起/换回 ⇒ **在密码框里上屏的词照样写进 `user.tsv`**。
+    本轮新加的「优先显示」写入路径**自己挡了**（`pin_candidate` 第一段就检查），
+    但**主路径（上屏）没挡**——这是既有缺口，不是本轮引入的。
+    要修得先定两件事：① 关掉学习时"已学的词还参不参与排序"（Core 注释说照常参与）；
+    ② `set_private` 与 `set_learning` 是不是同一个开关（Core 里是两个独立概念）。
+    **优先级：高（隐私语义，不是体验）。** 真机验它必须走密码框那条路。

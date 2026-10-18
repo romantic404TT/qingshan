@@ -9,9 +9,10 @@
 //! `LinkageError`。
 //!
 //! 分工：
-//! - 本文件：21 个真实现——输入路径的 8 个方法，加中/英模式切换 `setEnglishModeRaw`
-//!   （它被宿主的启动路径与中/英键硬解析，桩会让会话建不起来）、候选长按四件
-//!   `pinCandidateRaw` / `fixCandidatePositionRaw` / `clearCandidatePositionRaw` /
+//! - 本文件：27 个真实现——输入路径的 8 个方法，加中/英模式切换 `setEnglishModeRaw`
+//!   （它被宿主的启动路径与中/英键硬解析，桩会让会话建不起来）、候选长按里的「优先显示」
+//!   `pinCandidateRaw`（走 `Learner` 记一次选择，见 `pin_candidate`）与另外三件
+//!   `fixCandidatePositionRaw` / `clearCandidatePositionRaw` /
 //!   `selectEdgeRaw`（Core 无对应能力，回「原样 View + `handled:false`」止血）、
 //!   `removeCandidateRaw`（接 `Engine::forget`）、展开面板 `allCandidatesRaw`
 //!   与它唯一的写入口 `selectAnyCandidateRaw`，`refreshHostRaw`（比随包锁的长度，
@@ -21,7 +22,7 @@
 //!   `mobileClipboardHistoryRaw`（切片 1：只接 `load` 与 `capture`，
 //!   其余四个操作仍回 `not_implemented`）。
 //!   **计数以 `tools/gen_stub.py` 的 `REAL` 集合为准。**
-//! - `stub.rs`：其余 81 个，由 `tools/gen_stub.py` 从 Java 声明生成，回 `not_implemented`。
+//! - `stub.rs`：其余 75 个，由 `tools/gen_stub.py` 从 Java 声明生成，回 `not_implemented`。
 //! - `session.rs`：会话表 + 宿主游标；`keys.rs`：键码与命令号分派；`view.rs`：JSON 镜像；
 //!   `wire.rs`：信封与 `byte[]` 收发；`resources_lock.rs`：随包锁的解析与长度比对；
 //!   `preferences.rs`：偏好档的读写（原子写 + 等值 CAS）、应答体的字段要求与
@@ -383,10 +384,11 @@ where
     }
 }
 
-/// 止血站点共用的空操作应答：候选长按四件 `pinCandidate` / `fixCandidatePosition` /
-/// `clearCandidatePosition` / `selectEdge`，加本轮两件 `glide` / `setNineKeyFilter`。
+/// 止血站点共用的空操作应答：候选长按三件 `fixCandidatePosition` / `clearCandidatePosition` /
+/// `selectEdge`，加 `glide` / `setNineKeyFilter`。
+/// （第四件 `pinCandidate`「优先显示」已于 2026-10-18 转真，走 `Learner` 记一次选择，见 `pin_candidate`。）
 ///
-/// 为什么不是桩：这六个调用点的 catch 体都是 `fail()`（`MSIMEInputService.java:6046`、
+/// 为什么不是桩：这五个调用点的 catch 体都是 `fail()`（`MSIMEInputService.java:6046`、
 /// `:6243`、`:3147`、`:3160`），回 `not_implemented` 等于「点一下就死会话」。青简 Core
 /// 没有对应能力（逐个核实见 `third-party/PIN.md`「会话建立后的 stub 降级面」与
 /// 「剩余 3 个杀会话站点」），先止血。
@@ -402,13 +404,77 @@ fn no_op(env: &mut EnvUnowned<'_>, session: jlong) -> jbyteArray {
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_app_msime_android_NativeClient_pinCandidateRaw(
-    mut env: EnvUnowned<'_>, _class: JObject<'_>, session: jlong, _generation: jlong, _index: jlong,
-) -> jbyteArray {
-    no_op(&mut env, session)
+/// 「优先显示」= 用户主动多选了一次这个候选，所以记的就是上屏时那两条学习记录。
+///
+/// **为什么两条都得记**（`crates/qingjian-core/src/ranking/scored.rs:38` 的 `SortKey` 写得很清楚）：
+/// 排序键第 5 位是 `Reverse(choice)`（同一输入串下选过的次数），第 6 位才是含
+/// `weight_bonus` 的上下文分数 ⇒ **只记 `Learner::record`（词频）在紧对手身上翻不了位**，
+/// 要置顶必须记 `record_choice`。上屏那条路也正是两条一起调
+/// （`crates/qingjian-core/src/engine/commit/mod.rs:112-114`）。
+///
+/// `choice` 的键：查询时用的是"当前作用域里被这个候选覆盖的那段原样字母"
+/// （`crates/qingjian-core/src/engine/query/phonetic.rs:146` 取 `choice_key(scope, scope.len())`、
+/// `:155` 再按覆盖长度切前缀），所以我们从**作用域**切，不用候选自带的音节表——
+/// 理由写在下面的注释里（前缀候选会记错键）。简拼与纠错生效时 Core 用的是原串前缀，
+/// 我们同样切原串 ⇒ 一致；只有"音节字母数超过作用域"这一种切法会与 Core 相同而非更差。
+/// 音节为空的候选（整句、英文、emoji）**直接交回宿主**：Core 上屏它们时本来也不记词频。
+///
+/// 代次不在这里碰，由 `transition` 统一推进；推进后宿主按新 View 重画，
+/// 被置顶的那个当场就排到第一格。
+fn pin_candidate(state: &mut Session, generation: u64, index: usize) -> CommandOutcome {
+    if !state.identity.learning_allowed {
+        // 私密框或用户关了「记忆新词」：不写学习数据。回 `Passthrough` 让宿主弹
+        // 「当前候选不支持此操作」（`MSIMEInputService.java:6043`），那是实话——
+        // 比假装播报「已优先显示」诚实。
+        return CommandOutcome::Passthrough;
+    }
+    let Some(index) = state.candidate_index(generation, index) else {
+        return CommandOutcome::Passthrough;
+    };
+    // 先 clone 再动 engine，否则 `&state.candidates` 与 `&mut state.engine` 同源借用冲突
+    // （`remove_candidate` 同一手法）。
+    let candidate = state.candidates[index].clone();
+    if !matches!(candidate.kind, qingjian_core::CandidateKind::Chinese) {
+        // 整句 / 英文 / emoji 候选没有"词频"可提：Core 上屏它们时本来就不调 `record`
+        // （`crates/qingjian-core/src/engine/commit/mod.rs:110-130`），这里也不假装置顶了。
+        return CommandOutcome::Passthrough;
+    }
+    // 键 = 当前作用域里**被这个候选覆盖的那段**原样字母（去掉隔音符号），与 Core 上屏时的
+    // `choice_key(scope, consumed)` 同一条规则（查询侧 `crates/qingjian-core/src/engine/query/phonetic.rs:146`
+    // 与 `:155` 就是拿这段去查 `choice_weight` 的）。
+    // **不能直接把音节表拼起来**：`nihao` 下会出前缀候选「你好像」（音节 ni hao xiang），
+    // 但它这次只覆盖 `nihao`——按音节拼就记到一个查询永远取不到的键上，
+    // 表现为"点了优先显示，下次还是没置顶"。
+    let raw = state.engine.composition().scope();
+    let letters: usize = candidate.syllables.iter().map(|s| s.chars().count()).sum();
+    let key: String = raw
+        .chars()
+        .take(letters.min(raw.chars().count()))
+        .filter(|c| *c != '\'')
+        .collect();
+    let learner = state.engine.learner_mut();
+    learner.record(&candidate);
+    if !key.is_empty() {
+        learner.record_choice(&key, &candidate.text);
+    }
+    CommandOutcome::Consumed
 }
 
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_app_msime_android_NativeClient_pinCandidateRaw(
+    mut env: EnvUnowned<'_>, _class: JObject<'_>, session: jlong, generation: jlong, index: jlong,
+) -> jbyteArray {
+    // 边界用页窗口（与 `removeCandidate` 同一条上游规则：`crates/input-runtime/src/runtime.rs:1796-1811`
+    // 把 `Pin`/`Fix`/`Clear`/`Remove`/`SelectEdge` 放在同一个 `if let` 组里按当页校验）。
+    transition(&mut env, session as u64, move |state| {
+        pin_candidate(state, generation as u64, index as usize)
+    })
+}
+
+/// 待办 29 的 (b)(c) 两件**仍停在止血**：Core 没有"置顶/固定位置"的位可存
+/// （`Candidate` 六个字段、引擎 `pub fn` 全清单、`Learner` trait 三处都查过），
+/// 要做「固定到首位 / 取消固定」得在我们这边自建固定表，并先读上游的固定语义
+/// （持久化吗、按词还是按读音、与调频怎么合）。见 PIN 待办 29。
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_app_msime_android_NativeClient_fixCandidatePositionRaw(
     mut env: EnvUnowned<'_>, _class: JObject<'_>, session: jlong, _generation: jlong,
@@ -869,6 +935,137 @@ mod tests {
         assert!(
             !state.candidates.is_empty(),
             "丢掉之后要按当前组字重建，不能留一张空表"
+        );
+    }
+
+    /// 「优先显示」的夹具：同一读音 `ni hao` 下三个词，词频 你好 > 拟好 > 泥壕。
+    const PIN_SAMPLE: &str = "你好\tni hao\t9000\n拟好\tni hao\t3000\n泥壕\tni hao\t800\n";
+
+    fn pin_session() -> Session {
+        let engine = qingjian_core::Engine::new(
+            qingjian_dictionary::Dictionary::parse(PIN_SAMPLE).expect("夹具词库"),
+        )
+        .with_learner(Box::new(qingjian_learning::FrequencyLearner::default()));
+        let mut state = Session::new(engine, 11);
+        for c in "nihao".chars() {
+            let _ = state.engine.push(c);
+        }
+        state.requery();
+        state
+    }
+
+    /// 「优先显示」= 用户又多选了一次这个候选：两条学习记录都要写上，
+    /// 且**当场重查就把它顶到第一格**。
+    ///
+    /// 判别器两条都实跑过（各红一条，因为 panic 会终止测试，后面的断言跑不到）：
+    /// 删掉 `record_choice` ⇒ `choice_weight` 那条红（实测 `left: 0 / right: 1`）；
+    /// 删掉 `record` ⇒ `weight` 那条红（同实测）。"排到第一"那条是这两条之后的独立证据。
+    #[test]
+    fn promoting_a_candidate_records_both_and_moves_it_first() {
+        let mut state = pin_session();
+        let index = state
+            .candidates
+            .iter()
+            .position(|c| c.text == "泥壕")
+            .expect("夹具里泥壕该有一格");
+        let generation = state.generation;
+        assert_eq!(state.candidates[0].text, "你好", "置顶之前首选是 你好");
+        assert!(
+            matches!(
+                pin_candidate(&mut state, generation, index),
+                CommandOutcome::Consumed
+            ),
+            "记上了就该回 Consumed，宿主才会播报「已优先显示」而不是「不支持此操作」"
+        );
+        assert_eq!(state.engine.learner().weight("泥壕"), 1, "词频记了一次");
+        assert_eq!(
+            state.engine.learner().choice_weight("nihao", "泥壕"),
+            1,
+            "同一读音下的选择记了一次"
+        );
+        state.requery();
+        assert_eq!(
+            state.candidates[0].text, "泥壕",
+            "排序键第 5 位是 choice，记过就该压过词频排到第一"
+        );
+    }
+
+    /// 私密框或用户关了「记忆新词」：不写学习数据，也不假装播报置顶。
+    #[test]
+    fn promoting_declines_when_learning_is_off() {
+        let mut state = pin_session();
+        let index = state
+            .candidates
+            .iter()
+            .position(|c| c.text == "泥壕")
+            .expect("夹具里泥壕该有一格");
+        let generation = state.generation;
+        state.identity.learning_allowed = false;
+        assert!(
+            matches!(
+                pin_candidate(&mut state, generation, index),
+                CommandOutcome::Passthrough
+            ),
+            "不许学习时就回 false，让宿主说实话"
+        );
+        assert_eq!(state.engine.learner().weight("泥壕"), 0, "一条都不该记上");
+    }
+
+    /// 代次对不上（菜单是旧那一帧的 id）⇒ 交回宿主，不能把选择记到别的词头上。
+    #[test]
+    fn promoting_declines_on_a_stale_generation() {
+        let mut state = pin_session();
+        let stale = state.generation + 1;
+        assert!(
+            matches!(
+                pin_candidate(&mut state, stale, 0),
+                CommandOutcome::Passthrough
+            ),
+            "过期代次必须被 `candidate_index` 挡下来"
+        );
+        assert_eq!(state.engine.learner().weight("你好"), 0);
+    }
+
+    /// **前缀候选的键要按作用域切，不能按音节表拼**（这是本函数实现里唯一一处非平凡的判断）。
+    /// 真机上 `nihao` 会出「你好像」这类读音更长的候选，它这次只覆盖 `nihao`；
+    /// 若按音节拼成 `nihaoxiang` 去记，查询侧（按作用域前缀取 `choice_weight`）永远取不到，
+    /// 症状就是"点了优先显示，下次还是没置顶"。
+    ///
+    /// 判别器实跑过：把键换回"音节表直接拼" ⇒ **只有这一条红**
+    /// （`记的键是被它覆盖的那段作用域`，`left: 0 / right: 1`），另外三条全绿——
+    /// 也就是说没有这条测试，那个 bug 会静悄悄上线。
+    #[test]
+    fn promoting_a_prefix_candidate_records_the_scope_prefix() {
+        let mut state = pin_session();
+        let long = qingjian_core::Candidate {
+            text: "你好像".to_owned(),
+            kind: qingjian_core::CandidateKind::Chinese,
+            syllables: vec!["ni".to_owned(), "hao".to_owned(), "xiang".to_owned()],
+            reading: None,
+            translation: None,
+            aux_code: None,
+        };
+        let mut list = state.candidates.clone();
+        list.push(long);
+        let index = list.len() - 1;
+        let generation = state.generation;
+        state.refresh(list);
+        assert!(
+            matches!(
+                pin_candidate(&mut state, generation, index),
+                CommandOutcome::Consumed
+            ),
+            "中文候选就该收下"
+        );
+        assert_eq!(
+            state.engine.learner().choice_weight("nihao", "你好像"),
+            1,
+            "记的键是被它覆盖的那段作用域 `nihao`"
+        );
+        assert_eq!(
+            state.engine.learner().choice_weight("nihaoxiang", "你好像"),
+            0,
+            "整条读音上不该有记录——查询侧永远取不到那个键"
         );
     }
 }
