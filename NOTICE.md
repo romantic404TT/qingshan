@@ -189,7 +189,8 @@ README"——后者已在当天 18:19–18:20 出过并验过第一个发布包�
    ——实际键盘本来就是 26 键，去「输入」页换一次方案再换回来即可复位。
    native 导出仍是 102 个（本轮没加符号；Rust 侧改的是 `assemble.rs` 的回显**内容**，不是接口）。
 
-12. `host/java/app/msime/android/home/KeyboardOptionsPage.java` 改了 **2 行**（1 处，2026-10-19 轮 AN 用户拍板）
+12. `host/java/app/msime/android/home/KeyboardOptionsPage.java` 改了 **2 行**（1 处，2026-10-19 轮 AN 用户拍板；
+   diff 口径 = **删 1 行、加 3 行 ⇒ 净增 2 行**，其中新增的**可执行语句只有 `setVisibility` 那一条**，另两行是注释与给原句接住返回值）
    ——把「手势」组里的**「滑行输入」开关行隐藏**：原来那句 `gestures.toggle(...)` 前多接一行拿到
    `GroupCard.Row`、后面加一行 `glideRow.view().setVisibility(View.GONE)`，只改渲染、不碰逻辑与设置存储。
    理由：滑行在引擎侧是**刻意的** `no_op`（Rust 那份导出的注释写明了"抬手什么也不上屏"），
