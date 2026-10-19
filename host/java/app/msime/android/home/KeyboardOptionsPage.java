@@ -204,9 +204,11 @@ public final class KeyboardOptionsPage extends DetailPage {
                 value -> saveLocal(AndroidLocalSettings.NINE_KEY_SWIPE_DISTANCE, value));
             distanceRow.setEnabled(!NineKeySwipePolicy.OFF.equals(nineKeySwipe));
         }
-        gestures.toggle("滑行输入", "在 26 键上连续滑过拼音的字母，抬手出词；在键上稍作停留可确认经过的键",
+        // 滑行在引擎侧是 no_op（划动什么都不上屏），v1.0 先隐藏这个假入口，留待 1.1（NOTICE §5a 第 12 条）
+        GroupCard.Row glideRow = gestures.toggle("滑行输入", "在 26 键上连续滑过拼音的字母，抬手出词；在键上稍作停留可确认经过的键",
             settings.bool(AndroidLocalSettings.GLIDE_TYPING),
             checked -> saveLocal(AndroidLocalSettings.GLIDE_TYPING, checked));
+        glideRow.view().setVisibility(View.GONE);
         gestures.toggle("空格键滑动移动光标", null, settings.bool(AndroidLocalSettings.SPACE_CURSOR),
             checked -> saveLocal(AndroidLocalSettings.SPACE_CURSOR, checked));
         gestures.toggle("长按空格语音输入", null, settings.bool(AndroidLocalSettings.SPACE_VOICE),
